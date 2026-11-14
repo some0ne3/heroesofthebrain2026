@@ -57,12 +57,12 @@ class RuleEngineTest {
         val shortHold = Binding(
             id = "short-clench",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1200L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
         )
         val longHold = Binding(
             id = "long-clench",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 1500L, maxDurationMs = 3000L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
         )
         val engine = RuleEngine(
             profile = testProfile(listOf(shortHold, longHold)),
@@ -73,13 +73,13 @@ class RuleEngineTest {
         engine.processEvent(GestureStart(GestureType.CLENCH, timestampMs = 1000L, confidence = 0.9f, onsetMs = 600L))
         val shortEffects = engine.processEvent(GestureEnd(GestureType.CLENCH, timestampMs = 1800L, confidence = 0.9f, durationMs = 800L))
         assertEquals(1, shortEffects.size)
-        assertEquals(MediaCommand.VolumeUp, (shortEffects.first() as EngineEffect.ExecuteCommand).command)
+        assertEquals(MediaCommand.VolumeUp(), (shortEffects.first() as EngineEffect.ExecuteCommand).command)
 
         // Long clench (2000ms)
         engine.processEvent(GestureStart(GestureType.CLENCH, timestampMs = 3000L, confidence = 0.9f, onsetMs = 2600L))
         val longEffects = engine.processEvent(GestureEnd(GestureType.CLENCH, timestampMs = 5000L, confidence = 0.9f, durationMs = 2000L))
         assertEquals(1, longEffects.size)
-        assertEquals(MediaCommand.VolumeDown, (longEffects.first() as EngineEffect.ExecuteCommand).command)
+        assertEquals(MediaCommand.VolumeDown(), (longEffects.first() as EngineEffect.ExecuteCommand).command)
     }
 
     @Test
@@ -88,7 +88,7 @@ class RuleEngineTest {
             id = "hold-volup",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 400L),
             action = RuleAction.RepeatWhileHeld(
-                command = MediaCommand.VolumeUp,
+                command = MediaCommand.VolumeUp(),
                 intervalMs = 200L,
                 initialDelayMs = 0L,
             ),
@@ -109,7 +109,7 @@ class RuleEngineTest {
         // Advance to 1400ms: first fire
         val at1400 = engine.advanceTime(1400L)
         assertEquals(1, at1400.filterIsInstance<EngineEffect.ExecuteCommand>().size)
-        assertEquals(MediaCommand.VolumeUp, at1400.filterIsInstance<EngineEffect.ExecuteCommand>().first().command)
+        assertEquals(MediaCommand.VolumeUp(), at1400.filterIsInstance<EngineEffect.ExecuteCommand>().first().command)
 
         // Advance to 1600ms (+200ms interval): second fire
         val at1600 = engine.advanceTime(1600L)
@@ -128,7 +128,7 @@ class RuleEngineTest {
         val repeatBinding = Binding(
             id = "hold-volup",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 400L),
-            action = RuleAction.RepeatWhileHeld(command = MediaCommand.VolumeUp, intervalMs = 200L),
+            action = RuleAction.RepeatWhileHeld(command = MediaCommand.VolumeUp(), intervalMs = 200L),
         )
         val engine = RuleEngine(
             profile = testProfile(listOf(repeatBinding)),
@@ -151,7 +151,7 @@ class RuleEngineTest {
         val repeatBinding = Binding(
             id = "hold-volup",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 400L),
-            action = RuleAction.RepeatWhileHeld(command = MediaCommand.VolumeUp, intervalMs = 200L),
+            action = RuleAction.RepeatWhileHeld(command = MediaCommand.VolumeUp(), intervalMs = 200L),
         )
         val engine = RuleEngine(
             profile = testProfile(listOf(repeatBinding)),
@@ -504,13 +504,13 @@ class RuleEngineTest {
             id = "hold-a",
             name = "Short Clench",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1500L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
         )
         val holdB = Binding(
             id = "hold-b",
             name = "Long Clench",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 1200L, maxDurationMs = 2500L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
         )
 
         val warnings = AmbiguityResolver.analyze(listOf(single, seq, rep, holdA, holdB))

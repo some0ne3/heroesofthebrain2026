@@ -1,5 +1,7 @@
 package com.heroesofthebrain.halo.media
 
+import com.heroesofthebrain.halo.input.ArrowKey
+import com.heroesofthebrain.halo.input.ScrollDirection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -97,11 +99,11 @@ class PlatformMediaOutputTest {
     fun `volume commands adjust the music stream and report the new level`() {
         assertEquals(
             MediaResult.VolumeAdjusted(VolumeAdjust.RAISE, VolumeState(6, 15, false)),
-            output.execute(MediaCommand.VolumeUp),
+            output.execute(MediaCommand.VolumeUp()),
         )
         assertEquals(
             MediaResult.VolumeAdjusted(VolumeAdjust.LOWER, VolumeState(5, 15, false)),
-            output.execute(MediaCommand.VolumeDown),
+            output.execute(MediaCommand.VolumeDown()),
         )
         assertEquals(
             MediaResult.VolumeAdjusted(VolumeAdjust.TOGGLE_MUTE, VolumeState(5, 15, true)),
@@ -115,9 +117,22 @@ class PlatformMediaOutputTest {
     }
 
     @Test
+    fun `volume steps adjust the stream once per step`() {
+        assertEquals(
+            MediaResult.VolumeAdjusted(VolumeAdjust.RAISE, VolumeState(8, 15, false), steps = 3),
+            output.execute(MediaCommand.VolumeUp(3)),
+        )
+        assertEquals(
+            MediaResult.VolumeAdjusted(VolumeAdjust.LOWER, VolumeState(6, 15, false), steps = 2),
+            output.execute(MediaCommand.VolumeDown(2)),
+        )
+        assertEquals(List(3) { VolumeAdjust.RAISE } + List(2) { VolumeAdjust.LOWER }, platform.adjustments)
+    }
+
+    @Test
     fun `fixed volume devices report unsupported without touching the stream`() {
         platform.volumeFixed = true
-        val result = output.execute(MediaCommand.VolumeUp)
+        val result = output.execute(MediaCommand.VolumeUp())
         assertTrue(result is MediaResult.Unsupported)
         assertTrue(platform.adjustments.isEmpty())
     }
@@ -209,7 +224,7 @@ class PlatformMediaOutputTest {
         platform.failure = SecurityException("not allowed")
         assertEquals(MediaResult.Failed("not allowed"), output.execute(MediaCommand.Play))
         platform.failure = IllegalStateException()
-        assertEquals(MediaResult.Failed("IllegalStateException"), output.execute(MediaCommand.VolumeUp))
+        assertEquals(MediaResult.Failed("IllegalStateException"), output.execute(MediaCommand.VolumeUp()))
     }
 
     @Test
@@ -217,6 +232,8 @@ class PlatformMediaOutputTest {
         assertTrue(MediaResult.KeyDispatched(MediaKey.PLAY, null).delivered)
         assertTrue(MediaResult.VolumeAdjusted(VolumeAdjust.RAISE, VolumeState(1, 15, false)).delivered)
         assertTrue(MediaResult.ControllerUsed("p", ControllerAction.FastForward).delivered)
+        assertTrue(MediaResult.Scrolled(ScrollDirection.DOWN, 50).delivered)
+        assertTrue(MediaResult.ArrowPressed(ArrowKey.LEFT).delivered)
         assertFalse(MediaResult.NoActiveSession.delivered)
         assertFalse(MediaResult.Unsupported("x").delivered)
         assertFalse(MediaResult.Failed("x").delivered)

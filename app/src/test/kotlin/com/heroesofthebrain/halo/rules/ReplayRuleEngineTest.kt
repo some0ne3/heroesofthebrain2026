@@ -74,13 +74,13 @@ class ReplayRuleEngineTest {
                     id = "short-clench-volup",
                     name = "Short Clench -> Vol Up",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1250L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
                 ),
                 Binding(
                     id = "long-clench-voldown",
                     name = "Long Clench -> Vol Down",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 1350L, maxDurationMs = 3000L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
                 ),
             ),
             globalSettings = GlobalSettings(
@@ -99,8 +99,8 @@ class ReplayRuleEngineTest {
         // Check that commands were fired
         assertTrue("Expected actions from clenches", commands.isNotEmpty())
 
-        val volUpCount = commands.count { it.command == MediaCommand.VolumeUp }
-        val volDownCount = commands.count { it.command == MediaCommand.VolumeDown }
+        val volUpCount = commands.count { it.command == MediaCommand.VolumeUp() }
+        val volDownCount = commands.count { it.command == MediaCommand.VolumeDown() }
 
         // The recording has 4 short clenches and 1 long clench
         assertTrue("Expected at least 3 VolumeUp actions from short clenches, got $volUpCount", volUpCount >= 3)

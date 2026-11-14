@@ -12,8 +12,8 @@ class MediaHelpersTest {
     @Test
     fun `command set has every command once with a 10 s default seek`() {
         val all = MediaCommand.all
-        assertEquals(11, all.size)
-        assertEquals(all.size, all.toSet().size)
+        assertEquals(17, all.size)
+        assertEquals(all.size, all.map { it::class }.toSet().size)
         assertEquals(10_000L, MediaCommand.SeekForward().amountMs)
         assertEquals(10_000L, MediaCommand.SeekBack().amountMs)
         assertThrows(IllegalArgumentException::class.java) { MediaCommand.SeekForward(0) }
@@ -21,9 +21,44 @@ class MediaHelpersTest {
     }
 
     @Test
+    fun `volume steps and scroll distance stay in range`() {
+        assertEquals(1, MediaCommand.VolumeUp().steps)
+        assertEquals(50, MediaCommand.ScrollDown().distancePercent)
+        assertThrows(IllegalArgumentException::class.java) { MediaCommand.VolumeUp(0) }
+        assertThrows(IllegalArgumentException::class.java) { MediaCommand.VolumeDown(11) }
+        assertThrows(IllegalArgumentException::class.java) { MediaCommand.ScrollDown(5) }
+        assertThrows(IllegalArgumentException::class.java) { MediaCommand.ScrollUp(90) }
+    }
+
+    @Test
+    fun `only scroll and arrow commands need the input service`() {
+        val needing = MediaCommand.all.filter { it.needsInputService }
+        assertEquals(
+            listOf(
+                MediaCommand.ScrollDown(), MediaCommand.ScrollUp(),
+                MediaCommand.ArrowUp, MediaCommand.ArrowDown, MediaCommand.ArrowLeft, MediaCommand.ArrowRight,
+            ),
+            needing,
+        )
+    }
+
+    @Test
+    fun `same kind ignores the amount`() {
+        assertTrue(MediaCommand.VolumeUp(4).sameKindAs(MediaCommand.VolumeUp()))
+        assertTrue(MediaCommand.ScrollDown(70).sameKindAs(MediaCommand.ScrollDown()))
+        assertFalse(MediaCommand.ScrollDown().sameKindAs(MediaCommand.ScrollUp()))
+        assertTrue(MediaCommand.ArrowLeft.sameKindAs(MediaCommand.ArrowLeft))
+    }
+
+    @Test
     fun `descriptions are readable`() {
         assertEquals("Seek +10 s", MediaCommand.SeekForward().describe())
         assertEquals("Seek -2.5 s", MediaCommand.SeekBack(2_500).describe())
+        assertEquals("Volume up", MediaCommand.VolumeUp().describe())
+        assertEquals("Volume down ×3", MediaCommand.VolumeDown(3).describe())
+        assertEquals("Scroll down 60%", MediaCommand.ScrollDown(60).describe())
+        assertEquals("Arrow left", MediaCommand.ArrowLeft.describe())
+        assertEquals("volume raise ×2: 7/15", MediaResult.VolumeAdjusted(VolumeAdjust.RAISE, VolumeState(7, 15, false), steps = 2).describe())
         assertEquals("seekTo 1:00 -> 1:10 in p", MediaResult.ControllerUsed("p", ControllerAction.SeekTo(60_000, 70_000)).describe())
         assertEquals("volume toggle_mute: 0/15 (muted)", MediaResult.VolumeAdjusted(VolumeAdjust.TOGGLE_MUTE, VolumeState(0, 15, true)).describe())
         assertEquals("key NEXT -> com.spotify.music", MediaResult.KeyDispatched(MediaKey.NEXT, "com.spotify.music").describe())

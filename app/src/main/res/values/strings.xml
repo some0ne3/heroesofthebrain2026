@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="input_service_label">Freehand scroll and arrow keys</string>
+    <string name="input_service_description">Lets Freehand scroll and press the arrow keys in the app you are using when you make a gesture with the HALO headset, for example to move to the next video in a vertical feed. Freehand cannot see what is on your screen.</string>
+</resources>

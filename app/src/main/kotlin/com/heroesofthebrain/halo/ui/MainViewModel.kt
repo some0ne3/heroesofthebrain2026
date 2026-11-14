@@ -19,6 +19,8 @@ import com.heroesofthebrain.halo.eeg.NearbyHeadset
 import com.heroesofthebrain.halo.eeg.SavedHeadset
 import com.heroesofthebrain.halo.eeg.SourceStatus
 import com.heroesofthebrain.halo.eeg.describeBleError
+import com.heroesofthebrain.halo.input.HaloInputService
+import com.heroesofthebrain.halo.rules.usesInputService
 import com.heroesofthebrain.halo.service.HaloRuntime
 import com.heroesofthebrain.halo.service.HaloService
 import com.heroesofthebrain.halo.service.PipelineState
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -54,6 +57,8 @@ data class UiState(
     // Assume exempt until MainActivity has checked, so the warning does not flash on launch.
     val batteryExempt: Boolean = true,
     val showBatteryDialog: Boolean = false,
+    // The active profile scrolls or presses arrow keys, but the accessibility service is off.
+    val inputServiceNeeded: Boolean = false,
     val activeScreen: ActiveScreen = ActiveScreen.MAIN,
     val recalibrationOffer: RecalibrationOffer? = null,
     val deviceName: String? = null,
@@ -136,6 +141,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch { pipeline.events.collect(::show) }
         viewModelScope.launch { headsetPreference.saved.collect { h -> _ui.update { it.copy(chosenHeadset = h) } } }
+        viewModelScope.launch {
+            combine(profileStore.activeProfileFlow, HaloInputService.running) { profile, running ->
+                profile.usesInputService() && !running
+            }.collect { needed -> _ui.update { it.copy(inputServiceNeeded = needed) } }
+        }
     }
 
     private fun initialState(): UiState {

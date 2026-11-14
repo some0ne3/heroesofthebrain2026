@@ -31,6 +31,20 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
 
+        <!-- Scroll and arrow-key actions. Only the system can bind it, after the user switches it on. -->
+        <service
+            android:name=".input.HaloInputService"
+            android:exported="true"
+            android:label="@string/input_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/halo_input_service" />
+        </service>
+
         <!-- Manual test bench for media output, see docs/media-compat.md -->
         <activity
             android:name=".media.MediaTestActivity"

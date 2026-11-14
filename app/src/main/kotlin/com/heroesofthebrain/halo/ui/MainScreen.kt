@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.eeg.SourceStatus
+import com.heroesofthebrain.halo.input.HaloInputService
 import com.heroesofthebrain.halo.service.ActionBlock
 import com.heroesofthebrain.halo.ui.calibration.CalibrationRoute
 import com.heroesofthebrain.halo.ui.calibration.PracticeRoute
@@ -277,7 +278,20 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
 
                 if (!state.batteryExempt) {
                     Spacer(Modifier.height(12.dp))
-                    BatteryWarningCard(onFix = onAllowBackground)
+                    WarningCard(
+                        title = "Background Execution Needed",
+                        text = "Battery optimization may stop EEG listening when the screen is off. Exempt Freehand to keep gestures active.",
+                        onFix = onAllowBackground,
+                    )
+                }
+
+                if (state.inputServiceNeeded) {
+                    Spacer(Modifier.height(12.dp))
+                    WarningCard(
+                        title = "Scrolling Is Off",
+                        text = "Your profile scrolls or presses arrow keys. Turn on Freehand in Accessibility settings so it can send them. It cannot see your screen.",
+                        onFix = { HaloInputService.openSettings(context) },
+                    )
                 }
 
                 if (state.permissionDenied) {
@@ -580,11 +594,8 @@ private fun ArmCard(state: UiState, onArmed: (Boolean) -> Unit) {
     }
 }
 
-/**
- * Battery Warning Card
- */
 @Composable
-private fun BatteryWarningCard(onFix: () -> Unit) {
+private fun WarningCard(title: String, text: String, onFix: () -> Unit) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = FreehandColors.Warning.copy(alpha = 0.12f)),
@@ -599,14 +610,14 @@ private fun BatteryWarningCard(onFix: () -> Unit) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = "Background Execution Needed",
+                    text = title,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = FreehandColors.Warning,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Battery optimization may stop EEG listening when the screen is off. Exempt Freehand to keep gestures active.",
+                    text = text,
                     style = MaterialTheme.typography.bodySmall,
                     color = FreehandColors.Cream,
                     lineHeight = 18.sp,

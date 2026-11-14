@@ -56,7 +56,7 @@ class TryItTesterTest {
             id = "test-hold",
             name = "Test Hold",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1200L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
         )
 
         val tester = TryItTester(binding)
@@ -82,7 +82,7 @@ class TryItTesterTest {
         val binding = Binding(
             id = "test-hold",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1000L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
         )
 
         val tester = TryItTester(binding)
@@ -104,7 +104,7 @@ class TryItTesterTest {
         val binding = Binding(
             id = "test-hold",
             trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1500L),
-            action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+            action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
         )
 
         val tester = TryItTester(binding)

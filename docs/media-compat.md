@@ -16,11 +16,13 @@ Code: `app/src/main/kotlin/com/heroesofthebrain/halo/media/`.
 | Stop | `KEYCODE_MEDIA_STOP` | same |
 | Next | `KEYCODE_MEDIA_NEXT` | same |
 | Previous | `KEYCODE_MEDIA_PREVIOUS` | same |
-| Volume up | `adjustStreamVolume(STREAM_MUSIC, ADJUST_RAISE, FLAG_SHOW_UI)` | same |
-| Volume down | `adjustStreamVolume(STREAM_MUSIC, ADJUST_LOWER, FLAG_SHOW_UI)` | same |
+| Volume up (default 1 step, up to 10) | `adjustStreamVolume(STREAM_MUSIC, ADJUST_RAISE, FLAG_SHOW_UI)`, once per step | same |
+| Volume down (default 1 step, up to 10) | `adjustStreamVolume(STREAM_MUSIC, ADJUST_LOWER, FLAG_SHOW_UI)`, once per step | same |
 | Mute (toggle) | `adjustStreamVolume(STREAM_MUSIC, ADJUST_TOGGLE_MUTE, FLAG_SHOW_UI)` | same |
 | Seek forward (default 10 s) | `KEYCODE_MEDIA_FAST_FORWARD`; the player picks the step | `transportControls.seekTo(position + amount)` on the active session, clamped to the track length. If the player does not advertise seeking: `fastForward()` if advertised, otherwise "unsupported". With no session: "no active session" |
 | Seek back (default 10 s) | `KEYCODE_MEDIA_REWIND`; the player picks the step | `seekTo(position - amount)`, clamped at 0, with the same fallbacks using `rewind()` |
+| Scroll down / up (default 50 %, 10-80 %) | A swipe through the accessibility service, see [Scrolling and arrow keys](#scrolling-and-arrow-keys) | same |
+| Arrow up / down / left / right | `performGlobalAction(GLOBAL_ACTION_DPAD_*)` through the accessibility service, Android 13+ only | same |
 
 "Active session" means the first session that is playing, then buffering, then paused, then the top of `MediaSessionManager.getActiveSessions`.
 
@@ -29,9 +31,11 @@ Every call returns a `MediaResult`:
 | Result | Meaning |
 |---|---|
 | `KeyDispatched(key, likelyTarget)` | Android accepted the key. `likelyTarget` is null without notification access. |
-| `VolumeAdjusted(adjust, volume)` | The music stream was adjusted. `volume` is the level, maximum and mute flag afterwards. |
+| `VolumeAdjusted(adjust, volume, steps)` | The music stream was adjusted `steps` times. `volume` is the level, maximum and mute flag afterwards. |
 | `ControllerUsed(package, action)` | A `MediaController` call went to that app (`seekTo from -> to`, `fastForward` or `rewind`). |
-| `Unsupported(reason)` | Nothing was sent: fixed-volume device, or the player advertises no seeking. |
+| `Scrolled(direction, distancePercent)` | The system accepted the swipe. |
+| `ArrowPressed(key)` | The system accepted the arrow key. |
+| `Unsupported(reason)` | Nothing was sent: fixed-volume device, the player advertises no seeking, the accessibility service is off, or arrow keys on Android 12 or older. |
 | `NoActiveSession` | Notification access shows no player at all, so a seek had nowhere to go. |
 | `Failed(reason)` | Android threw an exception. |
 
@@ -52,6 +56,26 @@ NotificationAccess.openSettings(context)
 ```
 
 `execute` can be called from any thread. The tracker does its work on the main thread. Without notification access the tracker reports `PlaybackStatus.UNKNOWN`, and all commands still work, with seeking falling back to keys.
+
+## Scrolling and arrow keys
+
+Code: `app/src/main/kotlin/com/heroesofthebrain/halo/input/`.
+
+Android has no API for sending touch, mouse-wheel or keyboard input to another app without root. The only way available to a normal app is an accessibility service, so these commands go through `HaloInputService`. The service asks for gestures only: it receives no accessibility events and cannot read window content, so it never sees what is on screen.
+
+- Scroll down works like a mouse wheel turned down: it shows what is below. In TikTok, YouTube Shorts and Instagram Reels this should be the next video (untested). The finger moves up the middle of the screen: from 50 % + d/2 of the screen height to 50 % - d/2, where d is the distance, over 250 ms. Scroll up is the reverse.
+- A 250 ms swipe is fast enough to count as a fling. Vertical video feeds usually turn the page on any fling, so the distance should hardly matter there (untested). In ordinary lists and web pages, a longer distance scrolls further, but the fling carries the content past the swipe itself.
+- The distance is limited to 10-80 % so both ends of the swipe stay clear of the status bar (which would pull down the notification shade) and the gesture navigation strip (which would go home).
+- If a new swipe starts while the previous one is still running, Android cancels the previous one. With "repeat while held", keep the interval above 250 ms. The editor warns when it is shorter.
+- Arrow keys use `GLOBAL_ACTION_DPAD_UP/DOWN/LEFT/RIGHT`, which exist since Android 13. They reach the focused window as D-pad key events, the same codes as a keyboard's arrow keys. Apps that ignore keyboard input ignore them too. Expected but untested: browsers scroll on them, YouTube Shorts in a browser moves to the next Short on arrow down, and the first press in an app may only move focus. Before Android 13 the result is `Unsupported`.
+- While the service is off, these commands return `Unsupported` and nothing is sent. The main screen shows a warning while the active profile has an enabled binding that uses them, and the editor shows one when such a command is picked.
+
+Turning it on:
+
+1. Settings > Accessibility > Freehand scroll and arrow keys (it can be under "Installed apps" or "Downloaded apps"), then turn it on. The warning cards open the Accessibility settings directly.
+2. On Android 13+, an APK installed outside an app store can find the toggle greyed out as a "Restricted setting". Open App info for Freehand, open the menu in the top corner, choose "Allow restricted settings", and then turn the toggle on.
+
+Play Protect: apps that declare an accessibility service get extra scrutiny, especially when sideloaded. The service is declared with `isAccessibilityTool="true"`, because the app is a hands-free accessibility tool. Untested: whether Play Protect warns about this APK.
 
 ## Test bench
 

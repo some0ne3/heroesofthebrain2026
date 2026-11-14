@@ -2,6 +2,7 @@ package com.heroesofthebrain.halo.rules
 
 import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.media.MediaCommand
+import com.heroesofthebrain.halo.media.needsInputService
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -192,13 +193,13 @@ data class BindingProfile(
                     id = "clench-volume-up",
                     name = "Volume Up",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1200L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
                 ),
                 Binding(
                     id = "clench-volume-down",
                     name = "Volume Down",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 1500L, maxDurationMs = 3000L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
                 ),
             ),
             globalSettings = GlobalSettings(
@@ -214,3 +215,14 @@ data class BindingProfile(
 }
 
 typealias Profile = BindingProfile
+
+val RuleAction.commands: List<MediaCommand>
+    get() = when (this) {
+        is RuleAction.SingleCommand -> listOf(command)
+        is RuleAction.RepeatWhileHeld -> listOf(command)
+        is RuleAction.Macro -> steps.map { it.command }
+    }
+
+// Disabled bindings don't count: they can't fire, so they shouldn't ask for the accessibility service.
+fun BindingProfile.usesInputService(): Boolean =
+    bindings.any { binding -> binding.enabled && binding.action.commands.any { it.needsInputService } }
