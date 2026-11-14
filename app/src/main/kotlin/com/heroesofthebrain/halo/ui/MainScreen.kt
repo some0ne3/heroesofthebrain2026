@@ -73,6 +73,7 @@ fun ControlType.color(): Color = when (this) {
     ControlType.HEAD_TURN_HORIZONTAL -> Color(0xFF1E88E5)
     ControlType.HEAD_TURN_VERTICAL -> Color(0xFF8E24AA)
     ControlType.DOUBLE_BLINK -> Color(0xFF00897B)
+    ControlType.LONG_BLINK -> Color(0xFF6D4C41)
     ControlType.NONE -> Grey
 }
 
@@ -81,6 +82,7 @@ fun ControlType.title(): String = when (this) {
     ControlType.HEAD_TURN_HORIZONTAL -> "HEAD TURN ↔"
     ControlType.HEAD_TURN_VERTICAL -> "HEAD TURN ↕"
     ControlType.DOUBLE_BLINK -> "DOUBLE BLINK"
+    ControlType.LONG_BLINK -> "LONG BLINK"
     ControlType.NONE -> "NONE"
 }
 
@@ -228,7 +230,7 @@ private fun LabelPanel(label: ControlType, confidence: Float) {
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
-            if (label == ControlType.DOUBLE_BLINK) {
+            if (label == ControlType.DOUBLE_BLINK || label == ControlType.LONG_BLINK) {
                 Text("experimental", color = label.color(), style = MaterialTheme.typography.labelLarge)
             }
             Spacer(Modifier.height(10.dp))

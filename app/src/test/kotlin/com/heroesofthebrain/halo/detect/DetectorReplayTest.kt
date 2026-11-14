@@ -4,6 +4,7 @@ import com.heroesofthebrain.halo.detect.ControlType.CLENCH
 import com.heroesofthebrain.halo.detect.ControlType.DOUBLE_BLINK
 import com.heroesofthebrain.halo.detect.ControlType.HEAD_TURN_HORIZONTAL
 import com.heroesofthebrain.halo.detect.ControlType.HEAD_TURN_VERTICAL
+import com.heroesofthebrain.halo.detect.ControlType.LONG_BLINK
 import com.heroesofthebrain.halo.eeg.EegFrame
 import com.heroesofthebrain.halo.eeg.ReplayCsv
 import com.heroesofthebrain.halo.eeg.ReplayRecording
@@ -80,7 +81,43 @@ class DetectorReplayTest {
     fun `double blink recording yields 4 double blinks`() {
         val events = detect("podw-mrug")
         assertEquals(4, events.count(DOUBLE_BLINK))
-        assertTrue(events.none { it.type == CLENCH || it.type in headTurns })
+        assertTrue(events.none { it.type == CLENCH || it.type == LONG_BLINK || it.type in headTurns })
+    }
+
+    @Test
+    fun `session 2 double blink recording yields 9 double blinks`() {
+        // Pairs read off the gyro z kicks offline; the EEG here saturates on several of them.
+        val events = detect("podw-mrug-s2")
+        assertEquals(9, events.count(DOUBLE_BLINK))
+        assertTrue(events.all { it.type == DOUBLE_BLINK })
+    }
+
+    @Test
+    fun `long blink recording yields 3 long blinks and no double blink`() {
+        // Closures of 1.44, 1.48 and 1.52 s, ending at 3.78, 9.46 and 22.60 s.
+        val events = detect("dlugie-mrug-s2")
+        val longMs = events.filter { it.type == LONG_BLINK }.map { it.timestampMs }
+        assertEquals(3, longMs.size)
+        listOf(3780L, 9460L, 22600L).zip(longMs).forEach { (open, at) -> assertTrue("long blink at $at ms", at - open in 0..500) }
+        assertTrue(events.all { it.type == LONG_BLINK })
+    }
+
+    @Test
+    fun `recordings without deliberate blinks yield no blink events`() {
+        val names = listOf("poj-mrug", "szczeka-docisk", "szczeka-otwierani", "obrot-glowa-pion", "obrot-glowa-poziomo", "untitled-125247", "zaamkn-oczy")
+        names.forEach { name ->
+            assertTrue(name, detect(name).none { it.type == DOUBLE_BLINK || it.type == LONG_BLINK })
+        }
+    }
+
+    @Test
+    fun `without gyro the EEG fallback still finds the session 1 double blinks`() {
+        val frames = recording("podw-mrug").frames().map { f ->
+            EegFrame(f.firstSampleIndex, f.hostTimeNs, f.sampleRate, f.sampleCount, f.eeg, f.accel, null, f.contact, f.batteryPct, f.isDummy)
+        }
+        val events = detect(frames)
+        assertEquals(4, events.count(DOUBLE_BLINK))
+        assertTrue(events.none { it.type == LONG_BLINK })
     }
 
     // Not a claim that eyes-closed is detected: only that the one closure we have does not fire other rules.

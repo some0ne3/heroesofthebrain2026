@@ -11,7 +11,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-enum class ControlType { CLENCH, HEAD_TURN_HORIZONTAL, HEAD_TURN_VERTICAL, DOUBLE_BLINK, NONE }
+enum class ControlType { CLENCH, HEAD_TURN_HORIZONTAL, HEAD_TURN_VERTICAL, DOUBLE_BLINK, LONG_BLINK, NONE }
 
 data class ControlEvent(
     val type: ControlType,
@@ -21,7 +21,7 @@ data class ControlEvent(
     val timestampMs: Long,
 )
 
-// Values tuned with causal filters on recordings/ses-001 (see tools/convert_recordings.py and DetectorReplayTest).
+// Values tuned with causal filters on recordings/ses-001 and ses-002 (see tools/convert_recordings.py and DetectorReplayTest).
 data class DetectorConfig(
     val warmupS: Double = 0.5,
     val clenchLowHz: Double = 30.0,
@@ -46,6 +46,17 @@ data class DetectorConfig(
     val blinkQuietBeforeS: Double = 0.4,
     val blinkThirdLobeFraction: Double = 0.4,
     val blinkMaxEpisodeS: Double = 1.3,
+    // Gyro z kicks of a forceful blink: ses-001/002 blinks reach 25-45 deg/s, jaw and rest stay under 8.
+    val lidKickDps: Double = 15.0,
+    // Blinks peak at ~52 deg/s total, head turns at 100+.
+    val lidMotionDps: Double = 75.0,
+    val lidMotionGuardS: Double = 0.3,
+    val lidConfirmS: Double = 0.2,
+    // Short closures measured 0.1-0.58 s, deliberate long ones 1.44-1.52 s.
+    val lidLongMinS: Double = 0.8,
+    val lidLongMaxS: Double = 5.0,
+    val lidDoubleMinGapS: Double = 0.15,
+    val lidDoubleMaxGapS: Double = 0.8,
 )
 
 class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = DetectorConfig()) {
@@ -163,6 +174,13 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         envAboveSinceS = -1.0
         pendingA = null
         pendingB = null
+        closeArmed = true
+        openArmed = true
+        closeS = -1.0
+        openKick = null
+        shortBlink = null
+        lidPending = null
+        lastMotionS = -1e9
     }
 
     private fun step(frame: EegFrame, s: Int, out: MutableList<ControlEvent>) {
@@ -236,10 +254,12 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
             gyroFilled = min(gyroFilled + 1, gyroWindow.size)
             gyroSmooth = gyroSum / gyroFilled
             updateTurn(nowS, gx, gy, gz, gyroMag, out)
+            updateLids(nowS, gz, gyroMag, out)
         }
 
         updateClench(nowS, ratio, okCount, gyroSmooth, out)
-        updateDoubleBlink(nowS, frontal, envelope, frontalOk, out)
+        // Blink EEG is mostly electrode shifts that saturate (ses-002), so EEG blinks are only the no-gyro fallback.
+        if (gyroSmooth == null) updateDoubleBlink(nowS, frontal, envelope, frontalOk, out)
 
         if (sinceReset % decimation == 0L) {
             displayVal[EEG_CHANNELS] = gyroMag.toFloat()
@@ -316,7 +336,84 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         }
     }
 
-    // ---- DOUBLE BLINK (experimental): two short negative Fp 1-8 Hz lobes ~0.25 s apart (negative because the reference sits at Fpz)
+    // ---- EYELIDS (gyro): a forceful blink jerks the headband about z, down when the lids close and up when they open.
+    // Closed time tells a blink from a long blink; two short blinks in a row make a double blink.
+
+    private class Blink(val startS: Double, val openS: Double, val closePeak: Double) {
+        var openPeak = 0.0
+    }
+
+    private class LidEvent(val type: ControlType, val first: Blink, val last: Blink, val decideS: Double)
+
+    private var closeArmed = true
+    private var openArmed = true
+    private var closeS = -1.0
+    private var closePeak = 0.0
+    private var openKick: Blink? = null
+    private var shortBlink: Blink? = null
+    private var lidPending: LidEvent? = null
+    private var lastMotionS = -1e9
+
+    private fun updateLids(nowS: Double, gz: Double, g: Double, out: MutableList<ControlEvent>) {
+        val kick = cfg.lidKickDps
+        if (g > cfg.lidMotionDps) lastMotionS = nowS
+
+        if (gz < -kick) {
+            if (closeArmed) {
+                closeArmed = false
+                closeS = nowS
+                closePeak = 0.0
+            }
+            closePeak = max(closePeak, -gz)
+        } else if (gz > -kick / 2) {
+            closeArmed = true
+        }
+
+        if (gz > kick) {
+            if (openArmed) {
+                openArmed = false
+                onLidsOpen(nowS)
+            }
+            openKick?.let { it.openPeak = max(it.openPeak, gz) }
+        } else if (gz < kick / 2) {
+            openArmed = true
+            openKick = null
+        }
+
+        // Wait a moment so a head turn starting right after the kick can still veto it.
+        val p = lidPending ?: return
+        if (nowS < p.decideS) return
+        lidPending = null
+        if (lastMotionS >= p.first.startS - cfg.lidMotionGuardS) return
+        val peak = when (p.type) {
+            ControlType.LONG_BLINK -> min(p.last.closePeak, p.last.openPeak)
+            else -> min(p.first.openPeak, p.last.openPeak)
+        }
+        out += event(p.type, scaled(peak, kick, 4 * kick), nowS)
+    }
+
+    private fun onLidsOpen(nowS: Double) {
+        val closed = if (closeS >= 0 && nowS - closeS <= cfg.lidLongMaxS) nowS - closeS else 0.0
+        val blink = Blink(if (closed > 0) closeS else nowS, nowS, closePeak)
+        closeS = -1.0
+        openKick = blink
+        val decideS = nowS + cfg.lidConfirmS
+        val prev = shortBlink
+        when {
+            closed >= cfg.lidLongMinS -> {
+                lidPending = LidEvent(ControlType.LONG_BLINK, blink, blink, decideS)
+                shortBlink = null
+            }
+            // Greedy pairing: ses-001 pairs sat 0.28 s apart but only 0.4 s from the next pair, so no third-blink veto.
+            prev != null && nowS - prev.openS in cfg.lidDoubleMinGapS..cfg.lidDoubleMaxGapS -> {
+                lidPending = LidEvent(ControlType.DOUBLE_BLINK, prev, blink, decideS)
+                shortBlink = null
+            }
+            else -> shortBlink = blink
+        }
+    }
+
+    // ---- DOUBLE BLINK, EEG fallback when the device sends no gyro: two short negative Fp 1-8 Hz lobes ~0.25 s apart (negative because the reference sits at Fpz)
 
     private class Lobe(val startS: Double, var peakUv: Double, var peakS: Double) {
         var endS = 0.0
