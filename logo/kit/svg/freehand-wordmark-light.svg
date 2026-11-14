@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -150 845 150">
+  <title>Freehand</title>
+  <g id="wordmark" fill="none" stroke="#1E1814" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path id="f" transform="translate(18 0)" d="M0 -10 V-114 A26 26 0 0 1 26 -140 H34 M-18 -90 H30"/>
+    <path id="r" transform="translate(83 0)" d="M0 -10 V-90 M0 -50 A40 40 0 0 1 40 -90 H48"/>
+    <path id="e1" transform="translate(166 0)" d="M0 -50 H80 A40 40 0 1 0 70.64 -24.29"/>
+    <path id="e2" transform="translate(279 0)" d="M0 -50 H80 A40 40 0 1 0 70.64 -24.29"/>
+    <path id="h" transform="translate(396 0)" d="M0 -10 V-140 M0 -50 A40 40 0 0 1 80 -50 V-10"/>
+    <path id="a" transform="translate(511 0)" d="M80 -50 A40 40 0 1 0 0 -50 A40 40 0 1 0 80 -50 M80 -90 V-10"/>
+    <path id="n" transform="translate(630 0)" d="M0 -10 V-90 M0 -50 A40 40 0 0 1 80 -50 V-10"/>
+    <path id="d" transform="translate(745 0)" d="M80 -50 A40 40 0 1 0 0 -50 A40 40 0 1 0 80 -50 M80 -140 V-10"/>
+  </g>
+</svg>

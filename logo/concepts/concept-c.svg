@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<g id="symbol" fill="#000" stroke="#000" stroke-width="14" stroke-linejoin="round">
+  <path id="lid" d="M76 46 L202.06 118.8 A136.81 136.81 0 0 1 76 94.53 Z"/>
+  <path id="play" d="M76 128.7 L76 210 L176.05 152.22 A164.81 164.81 0 0 1 76 128.7 Z"/>
+</g>
+</svg>

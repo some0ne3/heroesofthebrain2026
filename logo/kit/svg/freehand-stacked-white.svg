@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 507 283.6">
+  <title>Freehand</title>
+  <g transform="translate(74.3 -106.4) scale(1.4)">
+    <g id="symbol">
+      <rect id="bar1" x="14" y="110" width="26" height="36" rx="13" fill="#FFFFFF"/>
+      <rect id="bar2" x="54" y="76" width="26" height="104" rx="13" fill="#FFFFFF"/>
+      <circle id="pupil" cx="128" cy="128" r="34" fill="#FFFFFF"/>
+      <rect id="bar4" x="176" y="76" width="26" height="104" rx="13" fill="#FFFFFF"/>
+      <rect id="bar5" x="216" y="110" width="26" height="36" rx="13" fill="#FFFFFF"/>
+    </g>
+  </g>
+  <g transform="translate(6 283.6) scale(0.6)">
+    <g id="wordmark" fill="none" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+      <path id="f" transform="translate(18 0)" d="M0 -10 V-114 A26 26 0 0 1 26 -140 H34 M-18 -90 H30"/>
+      <path id="r" transform="translate(83 0)" d="M0 -10 V-90 M0 -50 A40 40 0 0 1 40 -90 H48"/>
+      <path id="e1" transform="translate(166 0)" d="M0 -50 H80 A40 40 0 1 0 70.64 -24.29"/>
+      <path id="e2" transform="translate(279 0)" d="M0 -50 H80 A40 40 0 1 0 70.64 -24.29"/>
+      <path id="h" transform="translate(396 0)" d="M0 -10 V-140 M0 -50 A40 40 0 0 1 80 -50 V-10"/>
+      <path id="a" transform="translate(511 0)" d="M80 -50 A40 40 0 1 0 0 -50 A40 40 0 1 0 80 -50 M80 -90 V-10"/>
+      <path id="n" transform="translate(630 0)" d="M0 -10 V-90 M0 -50 A40 40 0 0 1 80 -50 V-10"/>
+      <path id="d" transform="translate(745 0)" d="M80 -50 A40 40 0 1 0 0 -50 A40 40 0 1 0 80 -50 M80 -140 V-10"/>
+    </g>
+  </g>
+</svg>

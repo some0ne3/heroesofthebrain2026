@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="14 76 228 104">
+  <title>Freehand</title>
+  <g id="symbol">
+    <rect id="bar1" x="14" y="110" width="26" height="36" rx="13" fill="#FFFFFF"/>
+    <rect id="bar2" x="54" y="76" width="26" height="104" rx="13" fill="#FFFFFF"/>
+    <circle id="pupil" cx="128" cy="128" r="34" fill="#FFFFFF"/>
+    <rect id="bar4" x="176" y="76" width="26" height="104" rx="13" fill="#FFFFFF"/>
+    <rect id="bar5" x="216" y="110" width="26" height="36" rx="13" fill="#FFFFFF"/>
+  </g>
+</svg>

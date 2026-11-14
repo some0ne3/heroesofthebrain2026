@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 256" width="820" height="256">
+<g id="symbol" fill="#000">
+  <rect id="bar1" x="14" y="110" width="26" height="36" rx="13.0"/>
+  <rect id="bar2" x="54" y="76" width="26" height="104" rx="13.0"/>
+  <circle id="pupil" cx="128" cy="128" r="34"/>
+  <rect id="bar4" x="176" y="76" width="26" height="104" rx="13.0"/>
+  <rect id="bar5" x="216" y="110" width="26" height="36" rx="13.0"/>
+</g>
+
+<text x="292" y="166" font-family="Bahnschrift" font-weight="600" font-size="118" letter-spacing="-1" fill="#000">freehand</text>
+</svg>
