@@ -114,7 +114,7 @@ private fun ActionBlock?.text(): String = when (this) {
 }
 
 @Composable
-fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -> Unit) {
+fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -> Unit, onPickHeadset: () -> Unit) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val trace by vm.trace.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -187,6 +187,16 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
         )
     }
 
+    state.picker?.let { picker ->
+        HeadsetPickerDialog(
+            picker = picker,
+            chosen = state.chosenHeadset,
+            onChoose = vm::chooseHeadset,
+            onRescan = vm::scanHeadsets,
+            onDismiss = vm::closeHeadsetPicker,
+        )
+    }
+
     if (state.showBatteryDialog) {
         BatteryDialog(
             onContinue = {
@@ -222,23 +232,31 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
                 ) {
                     FreehandHeaderLockup(symbolHeight = 26.dp)
 
-                    // Source pill badge: headset name once one has been seen this session
-                    Box(
+                    // Source pill badge; for the headset it opens the picker
+                    val headsetSource = state.sourceKind == SourceKind.DEVICE
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .padding(start = 12.dp)
                             .weight(1f, fill = false)
-                            .background(FreehandColors.Ink800, CircleShape)
+                            .clip(CircleShape)
+                            .background(FreehandColors.Ink800)
                             .border(1.dp, FreehandColors.Ink600, CircleShape)
+                            .clickable(enabled = headsetSource, onClick = onPickHeadset)
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         Text(
-                            text = if (state.sourceKind == SourceKind.DEVICE) state.deviceName ?: "HALO" else "REPLAY",
+                            text = if (headsetSource) headsetLabel(running, state.deviceName, state.chosenHeadset) else "REPLAY",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = FreehandColors.Sand,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
+                        if (headsetSource) {
+                            Text(" ▾", style = MaterialTheme.typography.labelSmall, color = FreehandColors.Sand)
+                        }
                     }
                 }
 
@@ -305,7 +323,9 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
                             .height(56.dp),
                     ) {
                         Text(
-                            text = if (state.sourceKind == SourceKind.DEVICE) "Connect HALO Headset" else "Play Replay Session",
+                            text = if (state.sourceKind == SourceKind.DEVICE) "Connect ${state.chosenHeadset?.name ?: "HALO Headset"}" else "Play Replay Session",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                         )

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -197,6 +198,37 @@ class HaloPipelineTest {
         assertEquals(1, opened)
         assertEquals(1, source.opened)
         assertEquals(SourceRequest.Headset, pipeline.state.value.source)
+    }
+
+    @Test
+    fun `restart swaps the run without ever reporting it stopped`() = runTest {
+        val source = FakeSource()
+        val pipeline = pipelineWith(source)
+        val alerts = record(pipeline.linkAlerts)
+
+        pipeline.start(SourceRequest.Headset)
+        runCurrent()
+        source.statusFlow.value = SourceStatus.Streaming("HALO 1")
+        runCurrent()
+        val running = record(pipeline.state.map { it.running })
+
+        pipeline.restart(SourceRequest.Headset)
+        runCurrent()
+
+        assertEquals(2, source.opened)
+        assertTrue(pipeline.state.value.running)
+        assertFalse(false in running)
+        assertTrue(alerts.isEmpty())
+    }
+
+    @Test
+    fun `restart does nothing when idle`() = runTest {
+        val source = FakeSource()
+        val pipeline = pipelineWith(source)
+        pipeline.restart(SourceRequest.Headset)
+        runCurrent()
+        assertEquals(0, source.opened)
+        assertFalse(pipeline.state.value.running)
     }
 
     @Test

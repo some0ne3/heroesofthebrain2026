@@ -40,6 +40,10 @@ class MainActivity : ComponentActivity() {
         if (StartPermissions.canStart(headset(), BlePermissions.required, ::granted)) vm.start() else vm.onPermissionDenied()
     }
 
+    private val pickerPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (BlePermissions.required.all(::granted)) vm.openHeadsetPicker() else vm.onPermissionDenied()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // The app is always dark, so force light bar icons even when the phone itself is in light mode.
         enableEdgeToEdge(
@@ -56,7 +60,7 @@ class MainActivity : ComponentActivity() {
                         .background(FreehandColors.Ink900)
                         .windowInsetsPadding(WindowInsets.safeDrawing),
                 ) {
-                    MainScreen(vm, onConnect = ::connect, onAllowBackground = ::requestBatteryExemption)
+                    MainScreen(vm, onConnect = ::connect, onAllowBackground = ::requestBatteryExemption, onPickHeadset = ::pickHeadset)
                 }
             }
         }
@@ -84,6 +88,11 @@ class MainActivity : ComponentActivity() {
         }
         if (StartPermissions.POST_NOTIFICATIONS in missing) vm.markNotificationsAsked()
         startPermissions.launch(missing.toTypedArray())
+    }
+
+    private fun pickHeadset() {
+        val missing = BlePermissions.required.filterNot(::granted)
+        if (missing.isEmpty()) vm.openHeadsetPicker() else pickerPermissions.launch(missing.toTypedArray())
     }
 
     private fun requestBatteryExemption() {

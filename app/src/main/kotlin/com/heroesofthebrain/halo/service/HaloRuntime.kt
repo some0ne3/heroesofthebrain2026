@@ -3,6 +3,7 @@ package com.heroesofthebrain.halo.service
 import android.content.Context
 import com.heroesofthebrain.halo.calibration.CalibrationStore
 import com.heroesofthebrain.halo.eeg.BrainAccessSource
+import com.heroesofthebrain.halo.eeg.HeadsetPreference
 import com.heroesofthebrain.halo.eeg.ReplaySource
 import com.heroesofthebrain.halo.media.AndroidMediaOutput
 import com.heroesofthebrain.halo.media.MediaOutput
@@ -28,6 +29,21 @@ object HaloRuntime {
     private var trackerInstance: MediaSessionTracker? = null
     @Volatile
     private var ruleRunnerInstance: RuleRunner? = null
+    @Volatile
+    private var headsetPreferenceInstance: HeadsetPreference? = null
+    @Volatile
+    private var headsetInstance: BrainAccessSource? = null
+
+    fun headsetPreference(context: Context): HeadsetPreference =
+        headsetPreferenceInstance ?: synchronized(this) {
+            headsetPreferenceInstance ?: HeadsetPreference.inAppStorage(context.applicationContext).also { headsetPreferenceInstance = it }
+        }
+
+    // Created on first use so Replay mode never touches Bluetooth. The picker scans through it too, sharing one client.
+    fun headset(context: Context): BrainAccessSource =
+        headsetInstance ?: synchronized(this) {
+            headsetInstance ?: BrainAccessSource(context.applicationContext, headsetPreference(context).saved).also { headsetInstance = it }
+        }
 
     fun pipeline(context: Context): HaloPipeline =
         instance ?: synchronized(this) { instance ?: create(context.applicationContext).also { instance = it } }
@@ -68,15 +84,13 @@ object HaloRuntime {
     }
 
     private fun create(app: Context): HaloPipeline {
-        // Created on first use so Replay mode never touches Bluetooth.
-        val device by lazy { BrainAccessSource(app) }
         val store = CalibrationStore.inAppStorage(app)
         return HaloPipeline(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             configProvider = { store.activeConfig() },
         ) { request ->
             when (request) {
-                SourceRequest.Headset -> device
+                SourceRequest.Headset -> headset(app)
                 is SourceRequest.Replay -> ReplaySource(request.file) { app.assets.open("$REPLAY_DIR/${request.file}.csv") }
             }
         }

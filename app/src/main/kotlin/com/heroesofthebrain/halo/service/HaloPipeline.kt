@@ -99,6 +99,16 @@ class HaloPipeline(
         }
     }
 
+    // Replaces a run HaloService already owns, e.g. to switch headsets. running never drops to false in between,
+    // so the service stays up and no link-loss alert fires. Does nothing when idle, as only the service starts runs.
+    fun restart(request: SourceRequest) {
+        synchronized(lock) {
+            if (runJob?.isActive != true) return
+            runJob?.cancel()
+            start(request)
+        }
+    }
+
     // Keeps the reference so the next start() can wait for this run's cleanup.
     fun stop() {
         synchronized(lock) { runJob?.cancel() }

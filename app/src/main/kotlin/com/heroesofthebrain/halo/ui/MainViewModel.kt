@@ -15,11 +15,15 @@ import com.heroesofthebrain.halo.detect.GestureEvent
 import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.detect.describe
 import com.heroesofthebrain.halo.eeg.EegFrame
+import com.heroesofthebrain.halo.eeg.NearbyHeadset
+import com.heroesofthebrain.halo.eeg.SavedHeadset
 import com.heroesofthebrain.halo.eeg.SourceStatus
+import com.heroesofthebrain.halo.eeg.describeBleError
 import com.heroesofthebrain.halo.service.HaloRuntime
 import com.heroesofthebrain.halo.service.HaloService
 import com.heroesofthebrain.halo.service.PipelineState
 import com.heroesofthebrain.halo.service.SourceRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
 
 enum class SourceKind { DEVICE, REPLAY }
@@ -52,7 +57,27 @@ data class UiState(
     val activeScreen: ActiveScreen = ActiveScreen.MAIN,
     val recalibrationOffer: RecalibrationOffer? = null,
     val deviceName: String? = null,
+    val chosenHeadset: SavedHeadset? = null,
+    val picker: HeadsetPicker? = null,
 )
+
+data class HeadsetPicker(
+    val scanning: Boolean = true,
+    val found: List<NearbyHeadset> = emptyList(),
+    val connected: NearbyHeadset? = null,
+    val error: String? = null,
+)
+
+internal fun headsetLabel(running: Boolean, liveName: String?, chosen: SavedHeadset?): String =
+    liveName?.takeIf { running } ?: chosen?.name ?: "Closest HALO"
+
+// "Closest" keeps whatever is connected; a specific headset only drops the link when it is a different one.
+// While nothing is connected the run is still searching, so it restarts the search with the new choice.
+internal fun needsReconnect(choice: SavedHeadset?, connected: NearbyHeadset?): Boolean = when {
+    connected == null -> true
+    choice == null -> false
+    else -> choice.id != connected.id
+}
 
 // Reconnecting carries no name, so callers keep the last one they saw instead of blanking it.
 internal fun headsetName(p: PipelineState): String? {
@@ -72,6 +97,8 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     val store = CalibrationStore.inAppStorage(app)
     val profileStore = HaloRuntime.profileStore(app)
     val recalibrationPolicy = RecalibrationPolicy()
+    private val headsetPreference = HaloRuntime.headsetPreference(app)
+    private var scanJob: Job? = null
 
     val frames: Flow<EegFrame> get() = pipeline.frames
     val events: Flow<GestureEvent> get() = pipeline.events
@@ -108,6 +135,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch { pipeline.events.collect(::show) }
+        viewModelScope.launch { headsetPreference.saved.collect { h -> _ui.update { it.copy(chosenHeadset = h) } } }
     }
 
     private fun initialState(): UiState {
@@ -121,6 +149,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             replayFiles = files,
             replayFile = replay?.file ?: files.firstOrNull { it == DEFAULT_REPLAY } ?: files.firstOrNull(),
             deviceName = headsetName(current),
+            chosenHeadset = headsetPreference.saved.value,
         )
     }
 
@@ -134,7 +163,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         holdJob?.cancel()
         _ui.update {
             it.copy(
-                permissionDenied = false, log = emptyList(), label = null, confidence = 0f,
+                permissionDenied = false, log = emptyList(), label = null, confidence = 0f, deviceName = null,
                 showBatteryDialog = it.sourceKind == SourceKind.DEVICE && !it.batteryExempt && !batteryPromptDismissed,
             )
         }
@@ -153,6 +182,52 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         if (kind == _ui.value.sourceKind) return
         stop()
         _ui.update { it.copy(sourceKind = kind, permissionDenied = false) }
+    }
+
+    // MainActivity calls this once the Bluetooth permissions are granted, since scanning needs them too.
+    fun openHeadsetPicker() {
+        _ui.update { it.copy(picker = HeadsetPicker()) }
+        scanHeadsets()
+    }
+
+    fun scanHeadsets() {
+        scanJob?.cancel()
+        val headset = HaloRuntime.headset(app)
+        scanJob = viewModelScope.launch {
+            _ui.update { it.copy(picker = it.picker?.copy(scanning = true, error = null, connected = headset.connected.value)) }
+            val error = if (!headset.bluetoothOn.value) {
+                "Bluetooth is off. Turn it on and scan again."
+            } else {
+                try {
+                    // Bounded so a forgotten dialog does not keep the radio scanning.
+                    withTimeoutOrNull(PICKER_SCAN_MS) {
+                        headset.nearby().collect { found -> _ui.update { it.copy(picker = it.picker?.copy(found = found)) } }
+                    }
+                    null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    describeBleError(e)
+                }
+            }
+            _ui.update { it.copy(picker = it.picker?.copy(scanning = false, error = error)) }
+        }
+    }
+
+    fun closeHeadsetPicker() {
+        scanJob?.cancel()
+        _ui.update { it.copy(picker = null) }
+    }
+
+    fun chooseHeadset(headset: SavedHeadset?) {
+        val connected = HaloRuntime.headset(app).connected.value
+        headsetPreference.choose(headset)
+        closeHeadsetPicker()
+        val p = pipeline.state.value
+        if (p.running && p.source == SourceRequest.Headset && needsReconnect(headset, connected)) {
+            _ui.update { it.copy(deviceName = null) }
+            pipeline.restart(SourceRequest.Headset)
+        }
     }
 
     fun selectReplay(name: String) {
@@ -239,5 +314,6 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         const val DEFAULT_REPLAY = "szczeka-docisk"
         const val HOLD_MS = 750L
         const val LOG_SIZE = 50
+        const val PICKER_SCAN_MS = 15_000L
     }
 }
