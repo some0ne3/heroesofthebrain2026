@@ -78,22 +78,15 @@ class HaloService : Service() {
             // is a fallback. Going foreground anyway satisfies startForegroundService(), which crashes the app if the
             // service stops before calling startForeground().
             Log.w(TAG, "startForeground failed", e)
-            if (Build.VERSION.SDK_INT >= 34) {
-                runCatching {
-                    ServiceCompat.startForeground(this, HaloNotifications.ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                    foreground = true
-                }
-            }
             false
         }
     }
 
-    // Replay has no Bluetooth link to declare, so on 14+ it runs as specialUse and needs no Bluetooth permission.
     private fun foregroundType(request: SourceRequest): Int =
-        if (request is SourceRequest.Replay && Build.VERSION.SDK_INT >= 34) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-        } else {
+        if (Build.VERSION.SDK_INT >= 29) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        } else {
+            0
         }
 
     private fun watch() {

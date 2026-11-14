@@ -68,16 +68,8 @@ class MainActivity : ComponentActivity() {
         startPermissions.launch(missing.toTypedArray())
     }
 
-    // The direct exemption prompt needs REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; a hands-free BLE remote is one of the
-    // cases it exists for. Some OEM builds have no handler for it, so fall back to the full list.
-    @SuppressLint("BatteryLife")
     private fun requestBatteryExemption() {
-        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
-        try {
-            startActivity(direct)
-        } catch (e: ActivityNotFoundException) {
-            runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
-        }
+        runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
     }
 
     private fun headset() = vm.ui.value.sourceKind == SourceKind.DEVICE
