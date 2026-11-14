@@ -145,4 +145,34 @@ class ProfileStoreTest {
         assertEquals(1, imported.bindings.size)
         assertTrue(imported.bindings.first().trigger is Trigger.Hold)
     }
+
+    @Test
+    fun `activeProfileFlow emits real-time updates when saving active profile or switching`() {
+        val store = ProfileStore(tempFolder.newFolder("profiles"))
+        val def = store.profiles().first()
+        assertEquals(def.id, store.activeProfileFlow.value.id)
+
+        // Update default profile with rebind
+        val rebind = def.copy(
+            bindings = listOf(
+                Binding(
+                    id = "rebind-1",
+                    name = "Next on double blink",
+                    trigger = Trigger.Single(GestureType.DOUBLE_BLINK),
+                    action = RuleAction.SingleCommand(MediaCommand.Next),
+                )
+            )
+        )
+        store.save(rebind)
+        assertEquals(1, store.activeProfileFlow.value.bindings.size)
+        assertEquals("rebind-1", store.activeProfileFlow.value.bindings.first().id)
+        assertEquals(MediaCommand.Next, (store.activeProfileFlow.value.bindings.first().action as RuleAction.SingleCommand).command)
+
+        // Create new profile and switch active
+        val p2 = BindingProfile(id = "gym", name = "Gym", createdAtMs = 500L)
+        store.save(p2)
+        store.activeProfileId = "gym"
+        assertEquals("gym", store.activeProfileFlow.value.id)
+        assertEquals("Gym", store.activeProfileFlow.value.name)
+    }
 }

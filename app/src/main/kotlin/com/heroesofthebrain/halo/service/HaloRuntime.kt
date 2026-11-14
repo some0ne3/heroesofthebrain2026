@@ -62,6 +62,7 @@ object HaloRuntime {
             pipeline = pl,
             mediaOutput = mo,
             profileProvider = { ps.activeProfile() },
+            activeProfileFlow = ps.activeProfileFlow,
             nowPlayingSource = tracker,
         )
     }

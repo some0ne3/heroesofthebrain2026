@@ -35,6 +35,15 @@ sealed interface AmbiguityWarning {
         override val message: String
             get() = "'${bindingA.name.ifEmpty { bindingA.id }}' and '${bindingB.name.ifEmpty { bindingB.id }}' have overlapping hold ranges on $gesture ($overlapMinMs..${overlapMaxMs?.toString() ?: "∞"} ms)"
     }
+
+    data class DuplicateTrigger(
+        val bindingA: Binding,
+        val bindingB: Binding,
+        val triggerDescription: String,
+    ) : AmbiguityWarning {
+        override val message: String
+            get() = "'${bindingA.name.ifEmpty { bindingA.id }}' and '${bindingB.name.ifEmpty { bindingB.id }}' share the identical trigger ($triggerDescription). Only the first one will execute."
+    }
 }
 
 object AmbiguityResolver {
@@ -101,7 +110,29 @@ object AmbiguityResolver {
             }
         }
 
+        // 3. Duplicate identical triggers
+        for (i in 0 until enabled.size) {
+            val bA = enabled[i]
+            for (j in i + 1 until enabled.size) {
+                val bB = enabled[j]
+                if (bA.trigger == bB.trigger) {
+                    warnings += AmbiguityWarning.DuplicateTrigger(
+                        bindingA = bA,
+                        bindingB = bB,
+                        triggerDescription = formatTrigger(bA.trigger),
+                    )
+                }
+            }
+        }
+
         return warnings
+    }
+
+    private fun formatTrigger(trigger: Trigger): String = when (trigger) {
+        is Trigger.Single -> trigger.gesture.name.replace('_', ' ')
+        is Trigger.Hold -> "Hold ${trigger.gesture.name.replace('_', ' ')} (${trigger.minDurationMs}..${trigger.maxDurationMs?.toString() ?: "∞"} ms)"
+        is Trigger.Repeat -> "${trigger.count}x ${trigger.gesture.name.replace('_', ' ')}"
+        is Trigger.Sequence -> trigger.gestures.joinToString(" → ") { it.name.replace('_', ' ') }
     }
 
     /**

@@ -89,16 +89,33 @@ fun EditorRoute(
 
     // 1. If currently editing a binding, show the full-screen BindingEditorScreen
     state.editingBinding?.let { binding ->
-        BackHandler { vm.cancelEditing() }
-        BindingEditorScreen(
-            initialBinding = binding,
-            allBindings = state.currentProfile.bindings,
-            calibrationHolds = state.calibrationHolds,
-            onSave = vm::saveBinding,
-            onCancel = vm::cancelEditing,
-            onTryIt = vm::startTryIt,
-            modifier = modifier,
-        )
+        BackHandler {
+            if (state.tryItSession != null) {
+                vm.stopTryIt()
+            } else {
+                vm.cancelEditing()
+            }
+        }
+        Box(modifier.fillMaxSize()) {
+            BindingEditorScreen(
+                initialBinding = binding,
+                allBindings = state.currentProfile.bindings,
+                calibrationHolds = state.calibrationHolds,
+                onSave = vm::saveBinding,
+                onCancel = vm::cancelEditing,
+                onTryIt = vm::startTryIt,
+                modifier = Modifier.fillMaxSize(),
+            )
+            state.tryItSession?.let { session ->
+                TryItSheet(
+                    session = session,
+                    onReset = vm::resetTryIt,
+                    onClose = vm::stopTryIt,
+                    onTick = vm::tickTryIt,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+        }
         return
     }
 
@@ -194,6 +211,51 @@ fun EditorRoute(
                 .fillMaxSize(),
         ) {
             item { Spacer(Modifier.height(12.dp)) }
+
+            // Inactive profile banner
+            if (state.selectedProfileId != state.activeProfileId) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = Amber.copy(alpha = 0.12f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Amber.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.setActiveProfile(state.selectedProfileId) },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "This profile is not active on the remote",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(bottom = 2.dp),
+                                )
+                                Text(
+                                    text = "Remote controls currently run the active profile. Tap to activate this profile.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Grey,
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = { vm.setActiveProfile(state.selectedProfileId) },
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Text("Activate", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
 
             // Ambiguity warning banner if any warnings
             if (state.ambiguityWarnings.isNotEmpty()) {
@@ -374,6 +436,23 @@ private fun EditorTopBar(
                                 },
                             )
                         }
+                    }
+                }
+
+                if (state.selectedProfileId != state.activeProfileId) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.clickable { onSetActiveProfile(state.selectedProfileId) },
+                    ) {
+                        Text(
+                            text = "Set Active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
                     }
                 }
             }

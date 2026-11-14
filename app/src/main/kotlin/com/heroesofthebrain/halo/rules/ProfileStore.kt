@@ -1,6 +1,9 @@
 package com.heroesofthebrain.halo.rules
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.Locale
@@ -19,6 +22,18 @@ class ProfileStore(
         root.mkdirs()
     }
 
+    private val _activeProfileFlow: MutableStateFlow<BindingProfile> by lazy {
+        MutableStateFlow(loadInitialActiveProfile())
+    }
+    val activeProfileFlow: StateFlow<BindingProfile> get() = _activeProfileFlow.asStateFlow()
+
+    private fun loadInitialActiveProfile(): BindingProfile = activeProfile()
+
+    private fun refreshActiveProfile() {
+        val current = activeProfile()
+        _activeProfileFlow.value = current
+    }
+
     /**
      * Lists all saved profiles, oldest first.
      * If no profiles exist, initializes and returns the default profile.
@@ -32,6 +47,9 @@ class ProfileStore(
             activeProfileId = def.id
             listOf(def)
         } else {
+            if (activeProfileId == null) {
+                activeProfileId = loaded.first().id
+            }
             loaded
         }
     }
@@ -43,6 +61,14 @@ class ProfileStore(
         require(SAFE_ID.matches(profile.id)) { "Invalid profile id: ${profile.id}" }
         val file = profileFile(profile.id)
         writeAtomically(file, json.encodeToString(BindingProfile.serializer(), profile))
+        val currentActiveId = activeProfileId
+        if (currentActiveId == null || currentActiveId == profile.id) {
+            if (currentActiveId == null) {
+                activeProfileId = profile.id
+            } else {
+                refreshActiveProfile()
+            }
+        }
         return file
     }
 
@@ -52,6 +78,8 @@ class ProfileStore(
         if (activeProfileId == id) {
             val remaining = root.listFiles { f -> f.isFile && f.name.endsWith(EXT) }.orEmpty()
             activeProfileId = remaining.firstOrNull()?.name?.removeSuffix(EXT)
+        } else {
+            refreshActiveProfile()
         }
     }
 
@@ -96,16 +124,18 @@ class ProfileStore(
                 require(SAFE_ID.matches(value)) { "Invalid profile id: $value" }
                 writeAtomically(file, value)
             }
+            refreshActiveProfile()
         }
 
     fun activeProfile(): BindingProfile {
         val active = activeProfileId?.let { profile(it) }
         if (active != null) return active
         val all = profiles()
-        return all.firstOrNull() ?: BindingProfile.defaultProfile(createdAtMs = clock()).also {
+        val picked = all.firstOrNull() ?: BindingProfile.defaultProfile(createdAtMs = clock()).also {
             save(it)
-            activeProfileId = it.id
         }
+        activeProfileId = picked.id
+        return picked
     }
 
     fun exportToJson(profile: BindingProfile): String =

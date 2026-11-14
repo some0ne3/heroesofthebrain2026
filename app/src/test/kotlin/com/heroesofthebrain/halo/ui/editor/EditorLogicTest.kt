@@ -127,6 +127,30 @@ class EditorLogicTest {
     }
 
     @Test
+    fun `conflict warnings detected for identical duplicate triggers`() {
+        val bindings = listOf(
+            Binding(
+                id = "b1",
+                name = "Play / Pause",
+                trigger = Trigger.Single(GestureType.DOUBLE_BLINK),
+                action = RuleAction.SingleCommand(MediaCommand.PlayPause),
+            ),
+            Binding(
+                id = "b2",
+                name = "Next Track",
+                trigger = Trigger.Single(GestureType.DOUBLE_BLINK),
+                action = RuleAction.SingleCommand(MediaCommand.Next),
+            ),
+        )
+
+        val warnings = AmbiguityResolver.analyze(bindings)
+        assertEquals(1, warnings.size)
+        val dupWarning = warnings.filterIsInstance<AmbiguityWarning.DuplicateTrigger>().firstOrNull()
+        assertNotNull(dupWarning)
+        assertTrue(dupWarning!!.message.contains("share the identical trigger"))
+    }
+
+    @Test
     fun `macro timeline builds sequential items accurately`() {
         val macroBinding = Binding(
             id = "skip-and-boost",

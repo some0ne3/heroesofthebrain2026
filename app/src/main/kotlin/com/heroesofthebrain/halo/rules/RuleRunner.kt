@@ -10,6 +10,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -19,10 +20,15 @@ class RuleRunner(
     private val pipeline: HaloPipeline,
     private val mediaOutput: MediaOutput,
     private val profileProvider: () -> BindingProfile,
+    private val activeProfileFlow: StateFlow<BindingProfile>? = null,
     private val nowPlayingSource: NowPlayingSource? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     val engine = RuleEngine(profile = profileProvider(), clock = clock)
+
+    fun setProfile(newProfile: BindingProfile) {
+        engine.profile = newProfile
+    }
 
     private val _effects = MutableSharedFlow<EngineEffect>(
         extraBufferCapacity = 64,
@@ -38,6 +44,15 @@ class RuleRunner(
 
     fun start(): Job = scope.launch {
         engine.profile = profileProvider()
+
+        // 0. Observe active profile updates in real time
+        activeProfileFlow?.let { flow ->
+            launch {
+                flow.collect { updatedProfile ->
+                    engine.profile = updatedProfile
+                }
+            }
+        }
 
         // 1. Observe pipeline state (actionsAllowed, armed, good channels)
         launch {
