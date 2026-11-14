@@ -9,27 +9,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.heroesofthebrain.halo.calibration.CalibrationGesture
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-internal val Green = Color(0xFF43A047)
-internal val Amber = Color(0xFFFFB300)
-internal val Red = Color(0xFFE53935)
-internal val Grey = Color(0xFF9E9E9E)
+internal val Green = FreehandColors.Success
+internal val Amber = FreehandColors.Warning
+internal val Red = FreehandColors.Error
+internal val Grey = FreehandColors.SandMuted
 
 internal fun CalibrationGesture.color(): Color = when (this) {
-    CalibrationGesture.CLENCH -> Color(0xFFFF8F00)
-    CalibrationGesture.TURN_LEFT, CalibrationGesture.TURN_RIGHT -> Color(0xFF1E88E5)
-    CalibrationGesture.TURN_UP, CalibrationGesture.TURN_DOWN -> Color(0xFF8E24AA)
-    CalibrationGesture.DOUBLE_BLINK -> Color(0xFF00897B)
-    CalibrationGesture.LONG_BLINK -> Color(0xFF6D4C41)
+    CalibrationGesture.CLENCH -> FreehandColors.Flame
+    CalibrationGesture.TURN_LEFT, CalibrationGesture.TURN_RIGHT,
+    CalibrationGesture.TURN_UP, CalibrationGesture.TURN_DOWN -> FreehandColors.Ember
+    CalibrationGesture.DOUBLE_BLINK, CalibrationGesture.LONG_BLINK -> FreehandColors.Pupil
 }
 
 internal fun rateColor(rate: Float): Color = when {
-    rate >= 0.8f -> Green
-    rate >= 0.5f -> Amber
-    else -> Red
+    rate >= 0.8f -> FreehandColors.Success
+    rate >= 0.5f -> FreehandColors.Warning
+    else -> FreehandColors.Error
 }
 
 @Composable

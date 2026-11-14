@@ -16,10 +16,17 @@ import androidx.compose.ui.unit.sp
 import com.heroesofthebrain.halo.detect.DebugTrace
 import com.heroesofthebrain.halo.eeg.EEG_CHANNELS
 import com.heroesofthebrain.halo.eeg.EEG_LABELS
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import kotlin.math.abs
 import kotlin.math.max
 
-private val laneColors = listOf(Color(0xFF66BB6A), Color(0xFFFFCA28), Color(0xFF42A5F5), Color(0xFFEF5350), Color(0xFFBDBDBD))
+private val laneColors = listOf(
+    FreehandColors.Flame,      // Ch 1 (Left inner wave)
+    FreehandColors.Pupil,      // Ch 2 (Center left)
+    FreehandColors.Ember,      // Ch 3 (Center right)
+    FreehandColors.Success,    // Ch 4 (Right outer wave)
+    FreehandColors.Sand,       // Gyro
+)
 
 // One lane per series: the 4 EEG channels (symmetric auto-scale) and the gyro magnitude (0 up).
 @Composable

@@ -101,7 +101,8 @@ class EditorViewModel(
 
     fun setActiveProfile(id: String) {
         profileStore.activeProfileId = id
-        _uiState.update { it.copy(activeProfileId = id) }
+        val all = profileStore.profiles()
+        _uiState.update { it.copy(activeProfileId = id, profiles = all) }
     }
 
     fun showNewProfileDialog() = _uiState.update { it.copy(showNewProfileDialog = true) }
@@ -117,6 +118,7 @@ class EditorViewModel(
             createdAtMs = System.currentTimeMillis(),
         )
         profileStore.save(newProfile)
+        profileStore.activeProfileId = newId
         dismissNewProfileDialog()
         loadProfiles()
         selectProfile(newId)
@@ -138,6 +140,7 @@ class EditorViewModel(
     fun duplicateProfile(newName: String) {
         val current = _uiState.value.currentProfile
         val dup = profileStore.duplicate(current.id, newName)
+        profileStore.activeProfileId = dup.id
         dismissDuplicateProfileDialog()
         loadProfiles()
         selectProfile(dup.id)
@@ -167,6 +170,7 @@ class EditorViewModel(
     fun importProfile(jsonText: String) {
         try {
             val imported = profileStore.importFromJson(jsonText)
+            profileStore.activeProfileId = imported.id
             dismissImportDialog()
             loadProfiles()
             selectProfile(imported.id)
@@ -193,8 +197,16 @@ class EditorViewModel(
         }
         val updated = current.copy(bindings = updatedBindings)
         profileStore.save(updated)
+        val all = profileStore.profiles()
         val warnings = AmbiguityResolver.analyze(updatedBindings)
-        _uiState.update { it.copy(currentProfile = updated, ambiguityWarnings = warnings) }
+        _uiState.update {
+            it.copy(
+                profiles = all,
+                activeProfileId = profileStore.activeProfileId,
+                currentProfile = updated,
+                ambiguityWarnings = warnings,
+            )
+        }
     }
 
     fun deleteBinding(bindingId: String) {
@@ -202,8 +214,16 @@ class EditorViewModel(
         val updatedBindings = current.bindings.filter { it.id != bindingId }
         val updated = current.copy(bindings = updatedBindings)
         profileStore.save(updated)
+        val all = profileStore.profiles()
         val warnings = AmbiguityResolver.analyze(updatedBindings)
-        _uiState.update { it.copy(currentProfile = updated, ambiguityWarnings = warnings) }
+        _uiState.update {
+            it.copy(
+                profiles = all,
+                activeProfileId = profileStore.activeProfileId,
+                currentProfile = updated,
+                ambiguityWarnings = warnings,
+            )
+        }
     }
 
     fun startEditing(binding: Binding) {
@@ -235,9 +255,12 @@ class EditorViewModel(
         }
         val updated = current.copy(bindings = updatedBindings)
         profileStore.save(updated)
+        val all = profileStore.profiles()
         val warnings = AmbiguityResolver.analyze(updatedBindings)
         _uiState.update {
             it.copy(
+                profiles = all,
+                activeProfileId = profileStore.activeProfileId,
                 currentProfile = updated,
                 ambiguityWarnings = warnings,
                 editingBinding = null,
@@ -249,7 +272,14 @@ class EditorViewModel(
         val current = _uiState.value.currentProfile
         val updated = current.copy(globalSettings = settings)
         profileStore.save(updated)
-        _uiState.update { it.copy(currentProfile = updated) }
+        val all = profileStore.profiles()
+        _uiState.update {
+            it.copy(
+                profiles = all,
+                activeProfileId = profileStore.activeProfileId,
+                currentProfile = updated,
+            )
+        }
     }
 
     fun startTryIt(binding: Binding) {

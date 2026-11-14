@@ -68,13 +68,18 @@ import com.heroesofthebrain.halo.rules.RuleAction
 import com.heroesofthebrain.halo.rules.Trigger
 import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SliderDefaults
 import kotlin.math.max
 import kotlin.math.roundToLong
 
-private val Green = Color(0xFF43A047)
-private val Amber = Color(0xFFFFB300)
-private val Red = Color(0xFFE53935)
-private val Grey = Color(0xFF9E9E9E)
+private val Green = FreehandColors.Success
+private val Amber = FreehandColors.Warning
+private val Red = FreehandColors.Error
+private val Grey = FreehandColors.SandMuted
 
 private enum class TriggerKind { SINGLE, HOLD, REPEAT, SEQUENCE }
 private enum class ActionKind { SINGLE_COMMAND, REPEAT_WHILE_HELD, MACRO }
@@ -90,11 +95,11 @@ fun BindingEditorScreen(
     onTryIt: (Binding) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var name by remember { mutableStateOf(initialBinding.name) }
-    var enabled by remember { mutableStateOf(initialBinding.enabled) }
+    var name by remember(initialBinding.id) { mutableStateOf(initialBinding.name) }
+    var enabled by remember(initialBinding.id) { mutableStateOf(initialBinding.enabled) }
 
     // Trigger state
-    var triggerKind by remember {
+    var triggerKind by remember(initialBinding.id) {
         mutableStateOf(
             when (initialBinding.trigger) {
                 is Trigger.Single -> TriggerKind.SINGLE
@@ -105,45 +110,45 @@ fun BindingEditorScreen(
         )
     }
 
-    var singleGesture by remember {
+    var singleGesture by remember(initialBinding.id) {
         mutableStateOf((initialBinding.trigger as? Trigger.Single)?.gesture ?: GestureType.DOUBLE_BLINK)
     }
 
-    var holdGesture by remember {
+    var holdGesture by remember(initialBinding.id) {
         mutableStateOf((initialBinding.trigger as? Trigger.Hold)?.gesture ?: GestureType.CLENCH)
     }
-    var holdMinMs by remember {
+    var holdMinMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.trigger as? Trigger.Hold)?.minDurationMs ?: 500L)
     }
-    var holdHasMax by remember {
+    var holdHasMax by remember(initialBinding.id) {
         mutableStateOf((initialBinding.trigger as? Trigger.Hold)?.maxDurationMs != null)
     }
-    var holdMaxMs by remember {
+    var holdMaxMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.trigger as? Trigger.Hold)?.maxDurationMs ?: 1500L)
     }
 
-    var repeatGesture by remember {
+    var repeatGesture by remember(initialBinding.id) {
         mutableStateOf((initialBinding.trigger as? Trigger.Repeat)?.gesture ?: GestureType.DOUBLE_BLINK)
     }
-    var repeatCount by remember {
+    var repeatCount by remember(initialBinding.id) {
         mutableIntStateOf((initialBinding.trigger as? Trigger.Repeat)?.count ?: 2)
     }
-    var repeatMaxGapMs by remember {
+    var repeatMaxGapMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.trigger as? Trigger.Repeat)?.maxGapMs ?: 800L)
     }
 
-    val sequenceGestures = remember {
+    val sequenceGestures = remember(initialBinding.id) {
         mutableStateListOf<GestureType>().apply {
             val seq = (initialBinding.trigger as? Trigger.Sequence)?.gestures
             if (!seq.isNullOrEmpty()) addAll(seq) else addAll(listOf(GestureType.TURN_LEFT, GestureType.TURN_RIGHT))
         }
     }
-    var sequenceMaxGapMs by remember {
+    var sequenceMaxGapMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.trigger as? Trigger.Sequence)?.maxGapMs ?: 1000L)
     }
 
     // Action state
-    var actionKind by remember {
+    var actionKind by remember(initialBinding.id) {
         mutableStateOf(
             when (initialBinding.action) {
                 is RuleAction.SingleCommand -> ActionKind.SINGLE_COMMAND
@@ -153,21 +158,21 @@ fun BindingEditorScreen(
         )
     }
 
-    var singleCommand by remember {
+    var singleCommand by remember(initialBinding.id) {
         mutableStateOf((initialBinding.action as? RuleAction.SingleCommand)?.command ?: MediaCommand.PlayPause)
     }
 
-    var repeatCommand by remember {
+    var repeatCommand by remember(initialBinding.id) {
         mutableStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.command ?: MediaCommand.VolumeUp)
     }
-    var repeatIntervalMs by remember {
+    var repeatIntervalMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.intervalMs ?: 350L)
     }
-    var repeatInitialDelayMs by remember {
+    var repeatInitialDelayMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.initialDelayMs ?: 0L)
     }
 
-    val macroSteps = remember {
+    val macroSteps = remember(initialBinding.id) {
         mutableStateListOf<MacroStep>().apply {
             val steps = (initialBinding.action as? RuleAction.Macro)?.steps
             if (!steps.isNullOrEmpty()) addAll(steps) else addAll(
@@ -180,13 +185,13 @@ fun BindingEditorScreen(
     }
 
     // Timing & Conditions
-    var delayBeforeMs by remember { mutableLongStateOf(initialBinding.timing.delayBeforeMs) }
-    var cooldownAfterMs by remember { mutableLongStateOf(initialBinding.timing.cooldownAfterMs) }
-    var cancelWindowMs by remember { mutableLongStateOf(initialBinding.timing.cancelWindowMs) }
-    var cancelGesture by remember { mutableStateOf(initialBinding.timing.cancelGesture) }
+    var delayBeforeMs by remember(initialBinding.id) { mutableLongStateOf(initialBinding.timing.delayBeforeMs) }
+    var cooldownAfterMs by remember(initialBinding.id) { mutableLongStateOf(initialBinding.timing.cooldownAfterMs) }
+    var cancelWindowMs by remember(initialBinding.id) { mutableLongStateOf(initialBinding.timing.cancelWindowMs) }
+    var cancelGesture by remember(initialBinding.id) { mutableStateOf(initialBinding.timing.cancelGesture) }
 
-    var onlyWhenArmed by remember { mutableStateOf(initialBinding.conditions.onlyWhenArmed) }
-    var mediaCondition by remember { mutableStateOf(initialBinding.conditions.mediaStatus) }
+    var onlyWhenArmed by remember(initialBinding.id) { mutableStateOf(initialBinding.conditions.onlyWhenArmed) }
+    var mediaCondition by remember(initialBinding.id) { mutableStateOf(initialBinding.conditions.mediaStatus) }
 
     // Assemble preview binding
     fun buildCurrentBinding(): Binding {
@@ -247,13 +252,20 @@ fun BindingEditorScreen(
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.ShadowedBySequence -> it.singleBinding.id == currentBinding.id || it.sequenceBinding.id == currentBinding.id
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.ShadowedByRepeat -> it.singleBinding.id == currentBinding.id || it.repeatBinding.id == currentBinding.id
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.OverlappingHoldRanges -> it.bindingA.id == currentBinding.id || it.bindingB.id == currentBinding.id
+            is com.heroesofthebrain.halo.rules.AmbiguityWarning.DuplicateTrigger -> it.bindingA.id == currentBinding.id || it.bindingB.id == currentBinding.id
         }
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
         topBar = {
-            Surface(tonalElevation = 2.dp) {
+            Surface(
+                color = FreehandColors.Ink800,
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                tonalElevation = 2.dp,
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -261,18 +273,34 @@ fun BindingEditorScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    TextButton(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+                    ) { Text("Cancel") }
                     Text(
                         text = if (initialBinding.name.isEmpty()) "New Binding" else "Edit Binding",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = FreehandColors.Cream,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onTryIt(currentBinding) }) {
+                        OutlinedButton(
+                            onClick = { onTryIt(buildCurrentBinding()) },
+                            shape = CircleShape,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Pupil),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Pupil.copy(alpha = 0.5f)),
+                        ) {
                             Text("Try it")
                         }
-                        Button(onClick = { onSave(currentBinding) }) {
-                            Text("Save")
+                        Button(
+                            onClick = { onSave(buildCurrentBinding()) },
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = FreehandColors.Flame,
+                                contentColor = FreehandColors.Ink900,
+                            ),
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -289,8 +317,9 @@ fun BindingEditorScreen(
 
             // 1. Name & Active Toggle
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(14.dp)) {
@@ -626,8 +655,9 @@ private fun HoldTriggerEditor(
     calibrationHolds: HoldStats?,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -747,8 +777,9 @@ private fun RepeatTriggerEditor(
     onMaxGapChange: (Long) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -807,8 +838,9 @@ private fun SequenceTriggerEditor(
     var showAddMenu by remember { mutableStateOf(false) }
 
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -894,8 +926,9 @@ private fun SingleCommandEditor(
     onCommandChange: (MediaCommand) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -949,8 +982,9 @@ private fun RepeatActionEditor(
     onInitialDelayChange: (Long) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -999,8 +1033,9 @@ private fun MacroActionEditor(
     steps: MutableList<MacroStep>,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1092,8 +1127,9 @@ private fun TimingEditorCard(
     onCancelGestureChange: (GestureType?) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1157,8 +1193,9 @@ private fun ConditionsCard(
     onMediaConditionChange: (MediaCondition) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1213,7 +1250,7 @@ private fun ConflictAnalysisCard(
     shadowWaitMs: Long,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (warnings.isNotEmpty() || shadowWaitMs > 0) Amber.copy(alpha = 0.12f) else Green.copy(alpha = 0.12f),
         ),

@@ -25,8 +25,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
+import com.heroesofthebrain.halo.ui.theme.FreehandTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -68,7 +68,7 @@ class MediaTestActivity : ComponentActivity() {
         tracker = MediaSessionTracker(this).also { it.start() }
         output = AndroidMediaOutput(this)
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            FreehandTheme(darkTheme = true) {
                 Screen()
             }
         }
@@ -110,7 +110,10 @@ class MediaTestActivity : ComponentActivity() {
     @Composable
     private fun Screen() {
         val now by tracker.nowPlaying.collectAsStateWithLifecycle()
-        Scaffold { padding ->
+        Scaffold(
+            containerColor = FreehandColors.Ink900,
+            contentColor = FreehandColors.Cream,
+        ) { padding ->
             Column(
                 Modifier
                     .padding(padding)
@@ -235,10 +238,10 @@ class MediaTestActivity : ComponentActivity() {
         const val DELAY_MS = 5_000L
         const val LOG_SIZE = 50
         val SEEK_STEPS_MS = listOf(5_000L, 10_000L, 30_000L)
-        val Green = Color(0xFF43A047)
-        val Amber = Color(0xFFFFB300)
-        val Red = Color(0xFFE53935)
-        val Grey = Color(0xFF9E9E9E)
+        val Green = FreehandColors.Success
+        val Amber = FreehandColors.Warning
+        val Red = FreehandColors.Error
+        val Grey = FreehandColors.SandMuted
         val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
     }
 }

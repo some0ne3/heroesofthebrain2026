@@ -62,12 +62,17 @@ import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
 import kotlinx.coroutines.flow.Flow
 import kotlin.math.roundToInt
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SliderDefaults
 import kotlin.math.roundToLong
 
-private val Green = Color(0xFF43A047)
-private val Amber = Color(0xFFFFB300)
-private val Red = Color(0xFFE53935)
-private val Grey = Color(0xFF9E9E9E)
+private val Green = FreehandColors.Success
+private val Amber = FreehandColors.Warning
+private val Red = FreehandColors.Error
+private val Grey = FreehandColors.SandMuted
 
 @Composable
 fun EditorRoute(
@@ -89,16 +94,33 @@ fun EditorRoute(
 
     // 1. If currently editing a binding, show the full-screen BindingEditorScreen
     state.editingBinding?.let { binding ->
-        BackHandler { vm.cancelEditing() }
-        BindingEditorScreen(
-            initialBinding = binding,
-            allBindings = state.currentProfile.bindings,
-            calibrationHolds = state.calibrationHolds,
-            onSave = vm::saveBinding,
-            onCancel = vm::cancelEditing,
-            onTryIt = vm::startTryIt,
-            modifier = modifier,
-        )
+        BackHandler {
+            if (state.tryItSession != null) {
+                vm.stopTryIt()
+            } else {
+                vm.cancelEditing()
+            }
+        }
+        Box(modifier.fillMaxSize()) {
+            BindingEditorScreen(
+                initialBinding = binding,
+                allBindings = state.currentProfile.bindings,
+                calibrationHolds = state.calibrationHolds,
+                onSave = vm::saveBinding,
+                onCancel = vm::cancelEditing,
+                onTryIt = vm::startTryIt,
+                modifier = Modifier.fillMaxSize(),
+            )
+            state.tryItSession?.let { session ->
+                TryItSheet(
+                    session = session,
+                    onReset = vm::resetTryIt,
+                    onClose = vm::stopTryIt,
+                    onTick = vm::tickTryIt,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+        }
         return
     }
 
@@ -171,6 +193,8 @@ fun EditorRoute(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
         topBar = {
             EditorTopBar(
                 state = state,
@@ -190,10 +214,59 @@ fun EditorRoute(
         LazyColumn(
             modifier = Modifier
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .fillMaxSize(),
         ) {
-            item { Spacer(Modifier.height(12.dp)) }
+            item { Spacer(Modifier.height(16.dp)) }
+
+            // Inactive profile banner
+            if (state.selectedProfileId != state.activeProfileId) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = FreehandColors.Warning.copy(alpha = 0.12f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Warning.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.setActiveProfile(state.selectedProfileId) },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "This profile is not active on the remote",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = FreehandColors.Warning,
+                                    modifier = Modifier.padding(bottom = 2.dp),
+                                )
+                                Text(
+                                    text = "Remote controls currently run the active profile. Tap to activate this profile.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = FreehandColors.Sand,
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Button(
+                                onClick = { vm.setActiveProfile(state.selectedProfileId) },
+                                shape = CircleShape,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = FreehandColors.Warning,
+                                    contentColor = FreehandColors.Ink900,
+                                ),
+                            ) {
+                                Text("Activate", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
 
             // Ambiguity warning banner if any warnings
             if (state.ambiguityWarnings.isNotEmpty()) {
@@ -374,6 +447,23 @@ private fun EditorTopBar(
                                 },
                             )
                         }
+                    }
+                }
+
+                if (state.selectedProfileId != state.activeProfileId) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.clickable { onSetActiveProfile(state.selectedProfileId) },
+                    ) {
+                        Text(
+                            text = "Set Active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        )
                     }
                 }
             }
@@ -629,17 +719,17 @@ private fun BindingCard(
     }
 
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (binding.enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            containerColor = if (binding.enabled) FreehandColors.Ink800 else FreehandColors.Ink850,
         ),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (binding.enabled) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+            if (binding.enabled) FreehandColors.Ink600 else FreehandColors.Ink700,
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(16.dp)) {
             // Header Row: Gesture Pill, Name, Switch
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -648,8 +738,8 @@ private fun BindingCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = gesture.color().copy(alpha = 0.2f),
+                        shape = CircleShape,
+                        color = gesture.color().copy(alpha = 0.15f),
                         border = androidx.compose.foundation.BorderStroke(1.dp, gesture.color()),
                     ) {
                         Text(
@@ -657,7 +747,7 @@ private fun BindingCard(
                             color = gesture.color(),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
                     }
                     Spacer(Modifier.width(10.dp))
@@ -665,13 +755,23 @@ private fun BindingCard(
                         text = binding.name.ifEmpty { binding.id },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = FreehandColors.Cream,
                         maxLines = 1,
                     )
                 }
-                Switch(checked = binding.enabled, onCheckedChange = onToggle)
+                Switch(
+                    checked = binding.enabled,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FreehandColors.Ink900,
+                        checkedTrackColor = FreehandColors.Flame,
+                        uncheckedThumbColor = FreehandColors.SandMuted,
+                        uncheckedTrackColor = FreehandColors.Ink700,
+                    ),
+                )
             }
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Subtitle: Trigger & Action details
             Row(
@@ -682,36 +782,36 @@ private fun BindingCard(
                 Text(
                     text = binding.triggerDescription(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = FreehandColors.Sand,
                 )
                 Text(
                     text = "▶ ${binding.actionDescription()}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = FreehandColors.Flame,
                 )
             }
 
             // Warnings / Chips
             if (shadowWaitMs > 0L) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(4.dp),
+                    shape = RoundedCornerShape(8.dp),
                     color = Amber.copy(alpha = 0.15f),
                 ) {
                     Text(
                         text = "Shadowed by sequence/repeat (+${shadowWaitMs}ms extra wait)",
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         color = Amber,
                         fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = FreehandColors.Ink600)
+            Spacer(Modifier.height(6.dp))
 
             // Action buttons
             Row(
@@ -720,15 +820,26 @@ private fun BindingCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = onEdit) {
+                    TextButton(
+                        onClick = onEdit,
+                        colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Cream),
+                    ) {
                         Text("Edit")
                     }
-                    OutlinedButton(onClick = onTryIt) {
+                    OutlinedButton(
+                        onClick = onTryIt,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Pupil),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Pupil.copy(alpha = 0.5f)),
+                    ) {
                         Text("Try it")
                     }
                 }
-                TextButton(onClick = onDelete) {
-                    Text("Delete", color = Red)
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = Red),
+                ) {
+                    Text("Delete")
                 }
             }
         }
