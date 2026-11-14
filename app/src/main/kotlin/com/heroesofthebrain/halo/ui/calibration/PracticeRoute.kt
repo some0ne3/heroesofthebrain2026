@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
 import com.heroesofthebrain.halo.calibration.CalibrationGesture
 import com.heroesofthebrain.halo.calibration.gesture
 import com.heroesofthebrain.halo.calibration.isOnset
@@ -41,6 +43,7 @@ import com.heroesofthebrain.halo.detect.GestureEnd
 import com.heroesofthebrain.halo.detect.GestureEvent
 import com.heroesofthebrain.halo.detect.GestureStart
 import com.heroesofthebrain.halo.detect.describe
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import kotlinx.coroutines.flow.Flow
 import java.util.Locale
 
@@ -83,17 +86,22 @@ fun PracticeRoute(
         if (log.isNotEmpty()) listState.animateScrollToItem(0)
     }
 
-    Scaffold(modifier) { padding ->
+    Scaffold(
+        modifier = modifier,
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
+    ) { padding ->
         Column(
             Modifier
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .fillMaxSize(),
         ) {
-            Spacer(Modifier.height(8.dp))
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Grey)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, color = FreehandColors.Cream)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FreehandColors.Sand)
+            Spacer(Modifier.height(16.dp))
 
             // Live detection banner
             AnimatedVisibility(
@@ -103,45 +111,46 @@ fun PracticeRoute(
             ) {
                 val event = current
                 if (event != null) {
+                    val gColor = event.gesture.color()
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .background(event.gesture.color().copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                            .padding(16.dp),
+                            .background(FreehandColors.Ink800, RoundedCornerShape(20.dp))
+                            .padding(20.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Dot(event.gesture.color())
-                        Spacer(Modifier.width(8.dp))
+                        Dot(gColor)
+                        Spacer(Modifier.width(12.dp))
                         Text(
                             event.gesture.title,
-                            fontSize = 28.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
-                            color = event.gesture.color(),
+                            color = gColor,
                         )
                         if (event is GestureStart) {
-                            Spacer(Modifier.width(8.dp))
-                            Text("holding…", style = MaterialTheme.typography.bodyMedium, color = Grey)
+                            Spacer(Modifier.width(10.dp))
+                            Text("holding…", style = MaterialTheme.typography.bodyMedium, color = FreehandColors.SandMuted)
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
             // Detection log
             if (log.isEmpty()) {
                 Text(
                     "Waiting for gestures…",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Grey,
+                    color = FreehandColors.SandMuted,
                     modifier = Modifier.padding(vertical = 24.dp),
                 )
             } else {
-                Text("Recent detections", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
+                Text("Recent detections", style = MaterialTheme.typography.titleSmall, color = FreehandColors.Cream)
+                Spacer(Modifier.height(8.dp))
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(log, key = { it.id }) { entry ->
                         PracticeLogRow(entry)
@@ -149,12 +158,25 @@ fun PracticeRoute(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { log.clear() }) { Text("Clear") }
-                OutlinedButton(onClick = onClose) { Text("Close") }
-            }
             Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = { log.clear() },
+                    shape = CircleShape,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Clear") }
+
+                OutlinedButton(
+                    onClick = onClose,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Close") }
+            }
+            Spacer(Modifier.height(20.dp))
         }
     }
 }
@@ -176,28 +198,26 @@ private fun PracticeLogRow(entry: PracticeEntry) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(
-                color.copy(alpha = 0.08f),
-                RoundedCornerShape(8.dp),
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .background(FreehandColors.Ink800, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Dot(color)
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(gesture.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(gesture.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = FreehandColors.Cream)
             val detail = buildString {
                 append(entry.event.describe())
                 entry.endEvent?.let { end ->
                     append(" → held %.2f s".format(Locale.US, end.durationMs / 1000.0))
                 }
             }
-            Text(detail, style = MaterialTheme.typography.labelSmall, color = Grey)
+            Text(detail, style = MaterialTheme.typography.labelSmall, color = FreehandColors.Sand)
         }
         Text(
             "%.0f %%".format(Locale.US, entry.event.confidence * 100),
             style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
             color = if (entry.event.confidence >= 0.7f) Green else if (entry.event.confidence >= 0.4f) Amber else Red,
         )
     }

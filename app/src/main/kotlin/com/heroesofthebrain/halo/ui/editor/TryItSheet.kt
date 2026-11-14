@@ -39,20 +39,23 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.heroesofthebrain.halo.detect.GestureEvent
+import com.heroesofthebrain.halo.media.describe
 import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.Trigger
 import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Green = Color(0xFF43A047)
-private val Amber = Color(0xFFFFB300)
-private val Red = Color(0xFFE53935)
-private val Grey = Color(0xFF9E9E9E)
+private val Green = FreehandColors.Success
+private val Amber = FreehandColors.Warning
+private val Red = FreehandColors.Error
+private val Grey = FreehandColors.SandMuted
 private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
 
 @Composable
@@ -75,8 +78,9 @@ fun TryItSheet(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        color = FreehandColors.Ink800,
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         tonalElevation = 8.dp,
     ) {
         Column(

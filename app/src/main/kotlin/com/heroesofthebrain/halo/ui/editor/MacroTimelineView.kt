@@ -33,13 +33,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.heroesofthebrain.halo.media.describe
 import com.heroesofthebrain.halo.rules.Binding
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 
-private val BorderColor = Color(0xFF333333)
-private val ConnectorColor = Color(0xFF555555)
-private val NodeBackground = Color(0xFF1E1E1E)
-private val AccentTeal = Color(0xFF00897B)
-private val AccentOrange = Color(0xFFFF8F00)
-private val AccentBlue = Color(0xFF1E88E5)
+private val BorderColor = FreehandColors.Ink600
+private val ConnectorColor = FreehandColors.Ink500
+private val NodeBackground = FreehandColors.Ink800
+private val AccentTeal = FreehandColors.Pupil
+private val AccentOrange = FreehandColors.Flame
+private val AccentBlue = FreehandColors.Ember
 
 /**
  * Razer Synapse-style horizontal timeline preview representing the chronological execution flow:
@@ -56,8 +57,9 @@ fun MacroTimelineView(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(

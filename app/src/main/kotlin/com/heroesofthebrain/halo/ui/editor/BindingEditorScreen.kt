@@ -68,13 +68,18 @@ import com.heroesofthebrain.halo.rules.RuleAction
 import com.heroesofthebrain.halo.rules.Trigger
 import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SliderDefaults
 import kotlin.math.max
 import kotlin.math.roundToLong
 
-private val Green = Color(0xFF43A047)
-private val Amber = Color(0xFFFFB300)
-private val Red = Color(0xFFE53935)
-private val Grey = Color(0xFF9E9E9E)
+private val Green = FreehandColors.Success
+private val Amber = FreehandColors.Warning
+private val Red = FreehandColors.Error
+private val Grey = FreehandColors.SandMuted
 
 private enum class TriggerKind { SINGLE, HOLD, REPEAT, SEQUENCE }
 private enum class ActionKind { SINGLE_COMMAND, REPEAT_WHILE_HELD, MACRO }
@@ -253,8 +258,14 @@ fun BindingEditorScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
         topBar = {
-            Surface(tonalElevation = 2.dp) {
+            Surface(
+                color = FreehandColors.Ink800,
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                tonalElevation = 2.dp,
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -262,18 +273,34 @@ fun BindingEditorScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onCancel) { Text("Cancel") }
+                    TextButton(
+                        onClick = onCancel,
+                        colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+                    ) { Text("Cancel") }
                     Text(
                         text = if (initialBinding.name.isEmpty()) "New Binding" else "Edit Binding",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = FreehandColors.Cream,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onTryIt(buildCurrentBinding()) }) {
+                        OutlinedButton(
+                            onClick = { onTryIt(buildCurrentBinding()) },
+                            shape = CircleShape,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Pupil),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Pupil.copy(alpha = 0.5f)),
+                        ) {
                             Text("Try it")
                         }
-                        Button(onClick = { onSave(buildCurrentBinding()) }) {
-                            Text("Save")
+                        Button(
+                            onClick = { onSave(buildCurrentBinding()) },
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = FreehandColors.Flame,
+                                contentColor = FreehandColors.Ink900,
+                            ),
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -290,8 +317,9 @@ fun BindingEditorScreen(
 
             // 1. Name & Active Toggle
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(14.dp)) {
@@ -627,8 +655,9 @@ private fun HoldTriggerEditor(
     calibrationHolds: HoldStats?,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -748,8 +777,9 @@ private fun RepeatTriggerEditor(
     onMaxGapChange: (Long) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -808,8 +838,9 @@ private fun SequenceTriggerEditor(
     var showAddMenu by remember { mutableStateOf(false) }
 
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -895,8 +926,9 @@ private fun SingleCommandEditor(
     onCommandChange: (MediaCommand) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -950,8 +982,9 @@ private fun RepeatActionEditor(
     onInitialDelayChange: (Long) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1000,8 +1033,9 @@ private fun MacroActionEditor(
     steps: MutableList<MacroStep>,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1093,8 +1127,9 @@ private fun TimingEditorCard(
     onCancelGestureChange: (GestureType?) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1158,8 +1193,9 @@ private fun ConditionsCard(
     onMediaConditionChange: (MediaCondition) -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
@@ -1214,7 +1250,7 @@ private fun ConflictAnalysisCard(
     shadowWaitMs: Long,
 ) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (warnings.isNotEmpty() || shadowWaitMs > 0) Amber.copy(alpha = 0.12f) else Green.copy(alpha = 0.12f),
         ),

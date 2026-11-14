@@ -4,7 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -35,18 +38,22 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -61,64 +68,50 @@ import com.heroesofthebrain.halo.service.ActionBlock
 import com.heroesofthebrain.halo.ui.calibration.CalibrationRoute
 import com.heroesofthebrain.halo.ui.calibration.PracticeRoute
 import com.heroesofthebrain.halo.ui.calibration.formatDate
+import com.heroesofthebrain.halo.ui.components.FreehandGestureToast
+import com.heroesofthebrain.halo.ui.components.FreehandHeaderLockup
+import com.heroesofthebrain.halo.ui.components.FreehandSignalCard
+import com.heroesofthebrain.halo.ui.components.GestureToastData
+import com.heroesofthebrain.halo.ui.components.PupilStatusDot
 import com.heroesofthebrain.halo.ui.editor.EditorRoute
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val Green = Color(0xFF43A047)
-private val Amber = Color(0xFFFFB300)
-private val Red = Color(0xFFE53935)
-private val Grey = Color(0xFF9E9E9E)
-
-fun GestureType?.color(): Color = when (this) {
-    GestureType.CLENCH -> Color(0xFFFF8F00)
-    GestureType.TURN_LEFT, GestureType.TURN_RIGHT -> Color(0xFF1E88E5)
-    GestureType.TURN_UP, GestureType.TURN_DOWN -> Color(0xFF8E24AA)
-    GestureType.DOUBLE_BLINK -> Color(0xFF00897B)
-    GestureType.LONG_BLINK -> Color(0xFF6D4C41)
-    null -> Grey
-}
+fun GestureType?.color(): Color = FreehandColors.forGesture(this)
 
 fun GestureType?.title(): String = when (this) {
-    GestureType.CLENCH -> "CLENCH"
-    GestureType.TURN_LEFT -> "TURN ←"
-    GestureType.TURN_RIGHT -> "TURN →"
-    GestureType.TURN_UP -> "TURN ↑"
-    GestureType.TURN_DOWN -> "TURN ↓"
+    GestureType.CLENCH -> "JAW CLENCH"
+    GestureType.TURN_LEFT -> "HEAD TURN ←"
+    GestureType.TURN_RIGHT -> "HEAD TURN →"
+    GestureType.TURN_UP -> "HEAD NOD ↑"
+    GestureType.TURN_DOWN -> "HEAD TILT ↓"
     GestureType.DOUBLE_BLINK -> "DOUBLE BLINK"
-    GestureType.LONG_BLINK -> "LONG BLINK"
-    null -> "NONE"
+    GestureType.LONG_BLINK -> "LONG EYE CLOSURE"
+    null -> "READY FOR GESTURE"
 }
 
 private fun SourceStatus.text(): String = when (this) {
     SourceStatus.Idle -> "Not connected"
-    SourceStatus.Scanning -> "Scanning for a HALO…"
+    SourceStatus.Scanning -> "Scanning for HALO…"
     is SourceStatus.Connecting -> "Connecting to $device…"
     is SourceStatus.Streaming -> device
     is SourceStatus.Reconnecting -> "Reconnecting: $reason"
     is SourceStatus.Waiting -> reason
-    SourceStatus.Finished -> "Replay finished"
+    SourceStatus.Finished -> "Replay complete"
     is SourceStatus.Failed -> message
 }
 
-private fun SourceStatus.color(): Color = when (this) {
-    is SourceStatus.Streaming -> Green
-    SourceStatus.Scanning, is SourceStatus.Connecting, is SourceStatus.Reconnecting, is SourceStatus.Waiting -> Amber
-    is SourceStatus.Failed -> Red
-    SourceStatus.Idle, SourceStatus.Finished -> Grey
-}
-
 private fun ActionBlock?.text(): String = when (this) {
-    null -> "Actions allowed"
-    ActionBlock.NOT_RUNNING -> "Actions off: not running"
-    ActionBlock.RECONNECTING -> "Actions paused until the headset is back"
-    ActionBlock.NOT_CONNECTED -> "Actions off: waiting for the headset"
-    ActionBlock.DISARMED -> "Actions off: disarmed"
+    null -> "Media actions active"
+    ActionBlock.NOT_RUNNING -> "Actions inactive: remote stopped"
+    ActionBlock.RECONNECTING -> "Actions paused: reconnecting to headset"
+    ActionBlock.NOT_CONNECTED -> "Actions inactive: headset not connected"
+    ActionBlock.DISARMED -> "Actions disarmed by user"
 }
 
-// Permission requests and the battery settings screen are launched by MainActivity, which owns their order.
 @Composable
 fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -> Unit) {
     val state by vm.ui.collectAsStateWithLifecycle()
@@ -161,12 +154,25 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
         ActiveScreen.MAIN -> Unit
     }
 
-    // The service keeps the remote alive with the screen off; keeping it on is only for watching the trace.
+    // Keep screen on if debug trace is expanded
     val view = LocalView.current
     val watchingTrace = running && state.debugExpanded
     DisposableEffect(watchingTrace) {
         view.keepScreenOn = watchingTrace
         onDispose { view.keepScreenOn = false }
+    }
+
+    // Gesture Toast state
+    var currentToast by remember { mutableStateOf<GestureToastData?>(null) }
+    val latestLog = state.log.firstOrNull()
+    LaunchedEffect(latestLog?.id) {
+        if (latestLog != null) {
+            currentToast = GestureToastData(
+                gesture = latestLog.type,
+                actionText = latestLog.text,
+                timestamp = latestLog.wallTimeMs,
+            )
+        }
     }
 
     state.recalibrationOffer?.let { offer ->
@@ -190,184 +196,679 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
         )
     }
 
-    Scaffold { padding ->
-        Column(
+    Scaffold(
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
+    ) { padding ->
+        Box(
             modifier = Modifier
                 .padding(padding)
-                .padding(horizontal = 16.dp)
                 .fillMaxSize(),
         ) {
-            Spacer(Modifier.height(8.dp))
-            StatusRow(state)
-            Spacer(Modifier.height(16.dp))
-            LabelPanel(state.label, state.confidence)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (running) {
-                    OutlinedButton(onClick = vm::stop) { Text("Stop") }
-                } else {
-                    Button(onClick = onConnect) { Text(if (state.sourceKind == SourceKind.DEVICE) "Connect" else "Play replay") }
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = if (state.sourceKind == SourceKind.DEVICE) "Source: HALO headset" else "Source: replay ${state.replayFile ?: "-"}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = {
-                    if (!running) onConnect()
-                    vm.openCalibration()
-                }) {
-                    Text("Calibrate")
-                }
-                OutlinedButton(onClick = {
-                    if (!running) onConnect()
-                    vm.openPractice()
-                }) {
-                    Text("Practice")
-                }
-                OutlinedButton(onClick = {
-                    vm.openEditor()
-                }) {
-                    Text("Editor")
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            ArmRow(state, onArmed = vm::setArmed)
-            if (!state.batteryExempt) BatteryRow(onFix = onAllowBackground)
-            if (state.permissionDenied) {
-                Spacer(Modifier.height(8.dp))
-                PermissionCard(onOpenSettings = {
-                    context.startActivity(
-                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
-                    )
-                })
-            }
-            Spacer(Modifier.height(12.dp))
-            Text("Detected events", style = MaterialTheme.typography.titleSmall)
-            EventLog(state.log, Modifier.weight(1f))
-            HorizontalDivider()
-            DebugPanel(state, trace, vm)
-        }
-    }
-}
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Spacer(Modifier.height(16.dp))
 
-@Composable
-private fun StatusRow(state: UiState) {
-    val p = state.pipeline
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Dot(p.status.color())
-            Spacer(Modifier.width(6.dp))
-            Text(p.status.text(), style = MaterialTheme.typography.bodyMedium, maxLines = 2, modifier = Modifier.weight(1f))
-            Text(
-                text = "Battery " + (p.batteryPct?.let { "${it.roundToInt()}%" } ?: "–"),
-                style = MaterialTheme.typography.bodyMedium,
+                // Top Header Lockup: "freehand" + Wave Eye mark
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FreehandHeaderLockup(symbolHeight = 26.dp)
+
+                    // Source pill badge
+                    Box(
+                        modifier = Modifier
+                            .background(FreehandColors.Ink800, CircleShape)
+                            .border(1.dp, FreehandColors.Ink600, CircleShape)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = if (state.sourceKind == SourceKind.DEVICE) "HALO BLE" else "REPLAY",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = FreehandColors.Sand,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Wave Eye Signal Quality & Connection Card
+                FreehandSignalCard(pipeline = state.pipeline)
+
+                Spacer(Modifier.height(16.dp))
+
+                // Hero Gesture Recognition Panel
+                HeroGesturePanel(label = state.label, confidence = state.confidence)
+
+                Spacer(Modifier.height(16.dp))
+
+                // Remote Arming Card (Tactile Switch)
+                ArmCard(state = state, onArmed = vm::setArmed)
+
+                if (!state.batteryExempt) {
+                    Spacer(Modifier.height(12.dp))
+                    BatteryWarningCard(onFix = onAllowBackground)
+                }
+
+                if (state.permissionDenied) {
+                    Spacer(Modifier.height(12.dp))
+                    PermissionCard(onOpenSettings = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
+                        )
+                    })
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Primary Connection Action Button (Capsule 56dp height)
+                if (running) {
+                    OutlinedButton(
+                        onClick = vm::stop,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = FreehandColors.Ember,
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, FreehandColors.Ember),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                    ) {
+                        Text(
+                            text = "Disconnect Remote",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onConnect,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FreehandColors.Flame,
+                            contentColor = FreehandColors.Ink900,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                    ) {
+                        Text(
+                            text = if (state.sourceKind == SourceKind.DEVICE) "Connect HALO Headset" else "Play Replay Session",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // Quick Navigation Pills (Calibrate · Practice · Editor)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            if (!running) onConnect()
+                            vm.openCalibration()
+                        },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text("Calibrate", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            if (!running) onConnect()
+                            vm.openPractice()
+                        },
+                        shape = CircleShape,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text("Practice", style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    OutlinedButton(
+                        onClick = vm::openEditor,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text("Editor", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                // Gesture Event Stream
+                EventStreamCard(log = state.log)
+
+                Spacer(Modifier.height(16.dp))
+
+                // Collapsible Debug Panel
+                DebugPanel(state = state, trace = trace, vm = vm)
+
+                Spacer(Modifier.height(40.dp))
+            }
+
+            // Floating Gesture Toast Overlay at Bottom
+            FreehandGestureToast(
+                toast = currentToast,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 28.dp),
+                onDismiss = { currentToast = null },
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            p.channels.forEach { ch ->
-                val color = when {
-                    !p.running -> Grey
-                    !ch.contact -> Red
-                    !ch.signalOk -> Amber
-                    else -> Green
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Dot(color)
-                    Spacer(Modifier.width(4.dp))
-                    Text(ch.label, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        Text(
-            "Contact: green ok, amber = contact reported but signal rejected as flat/noisy, red = no contact",
-            style = MaterialTheme.typography.labelSmall,
-            color = Grey,
-        )
     }
 }
 
+/**
+ * Modern Hero Gesture Panel with brand accent glow and confidence bar.
+ */
 @Composable
-private fun Dot(color: Color) {
-    Box(
-        Modifier
-            .size(10.dp)
-            .background(color, CircleShape),
+private fun HeroGesturePanel(label: GestureType?, confidence: Float) {
+    val activeColor = FreehandColors.forGesture(label)
+    val hasActive = label != null && confidence > 0f
+
+    val cardBorderColor by animateColorAsState(
+        targetValue = if (hasActive) activeColor.copy(alpha = 0.6f) else FreehandColors.Ink600,
+        label = "hero_border",
     )
+
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasActive) FreehandColors.Ink800 else FreehandColors.Ink850,
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, cardBorderColor),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Category pill
+                val gestureCategory = when (label) {
+                    GestureType.DOUBLE_BLINK, GestureType.LONG_BLINK -> "EYE GESTURE (EOG)"
+                    GestureType.CLENCH -> "MUSCLE CLENCH (EMG)"
+                    GestureType.TURN_LEFT, GestureType.TURN_RIGHT,
+                    GestureType.TURN_UP, GestureType.TURN_DOWN -> "MOTION GESTURE (GYRO)"
+                    null -> "GESTURE DETECTOR"
+                }
+
+                Box(
+                    modifier = Modifier
+                        .background(activeColor.copy(alpha = 0.15f), CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = gestureCategory,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = activeColor,
+                    )
+                }
+
+                if (hasActive) {
+                    Text(
+                        text = "${(confidence * 100).roundToInt()}% CONFIDENCE",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = activeColor,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Large Hero Gesture Title
+            Text(
+                text = label.title(),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (hasActive) activeColor else FreehandColors.Cream,
+                letterSpacing = (-0.2).sp,
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            // Capsule Confidence Meter
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(CircleShape)
+                    .background(FreehandColors.Ink700),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction = confidence.coerceIn(0f, 1f))
+                        .height(8.dp)
+                        .clip(CircleShape)
+                        .background(activeColor),
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                text = when (label) {
+                    GestureType.DOUBLE_BLINK -> "Double blink detected — triggers instant media action."
+                    GestureType.LONG_BLINK -> "Long eye closure detected — used for hold triggers or disarming."
+                    GestureType.CLENCH -> "Jaw clench detected — ideal for hold actions like volume adjustment."
+                    GestureType.TURN_LEFT, GestureType.TURN_RIGHT -> "Head turn detected — ideal for track skip navigation."
+                    GestureType.TURN_UP, GestureType.TURN_DOWN -> "Vertical head tilt detected."
+                    null -> "Perform a calibrated facial gesture (blink, clench, or head movement) to trigger media control."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = FreehandColors.Sand,
+                lineHeight = 19.sp,
+            )
+        }
+    }
 }
 
+/**
+ * Modern Remote Arming Card with Tactile Switch
+ */
 @Composable
-private fun LabelPanel(label: GestureType?, confidence: Float) {
+private fun ArmCard(state: UiState, onArmed: (Boolean) -> Unit) {
+    val p = state.pipeline
+    val isArmed = p.armed
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = label.color().copy(alpha = 0.15f)),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PupilStatusDot(active = p.running, armed = isArmed)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = if (isArmed) "Remote Armed" else "Remote Disarmed",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = FreehandColors.Cream,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = p.actionBlock.text(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (p.actionsAllowed) FreehandColors.Success else FreehandColors.SandMuted,
+                    )
+                }
+            }
+
+            Switch(
+                checked = isArmed,
+                onCheckedChange = onArmed,
+                enabled = p.running,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = FreehandColors.Ink900,
+                    checkedTrackColor = FreehandColors.Flame,
+                    uncheckedThumbColor = FreehandColors.SandMuted,
+                    uncheckedTrackColor = FreehandColors.Ink700,
+                    uncheckedBorderColor = FreehandColors.Ink600,
+                ),
+            )
+        }
+    }
+}
+
+/**
+ * Battery Warning Card
+ */
+@Composable
+private fun BatteryWarningCard(onFix: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Warning.copy(alpha = 0.12f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Warning.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "Background Execution Needed",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = FreehandColors.Warning,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Battery optimization may stop EEG listening when the screen is off. Exempt Freehand to keep gestures active.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FreehandColors.Cream,
+                    lineHeight = 18.sp,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onFix,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Warning,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Fix", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+/**
+ * Permission Required Card
+ */
+@Composable
+private fun PermissionCard(onOpenSettings: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Error.copy(alpha = 0.12f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Error.copy(alpha = 0.35f)),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                text = label.title(),
-                color = label.color(),
-                fontSize = 34.sp,
+                text = "Bluetooth Permissions Required",
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
+                color = FreehandColors.Error,
             )
-            if (label == GestureType.DOUBLE_BLINK || label == GestureType.LONG_BLINK) {
-                Text("experimental", color = label.color(), style = MaterialTheme.typography.labelLarge)
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Nearby devices or Location permission is required to scan and connect to the BrainAccess HALO headband.",
+                style = MaterialTheme.typography.bodySmall,
+                color = FreehandColors.Cream,
+            )
             Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                LinearProgressIndicator(
-                    progress = { confidence },
-                    color = label.color(),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(10.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-                Text("${(confidence * 100).roundToInt()} %", style = MaterialTheme.typography.titleMedium)
+            Button(
+                onClick = onOpenSettings,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Error,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Open Settings", fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+/**
+ * Live Gesture Event Stream Card
+ */
+@Composable
+private fun EventStreamCard(log: List<LogEntry>) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 140.dp, max = 280.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Activity Stream",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = FreehandColors.Cream,
+                )
+                Text(
+                    text = "${log.size} events",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FreehandColors.SandMuted,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = FreehandColors.Ink600)
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Confidence is a heuristic score of how far the signal went past the rule's threshold. " +
-                    "It is not a calibrated probability.",
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Text(
-                "Not detected: single blink, jaw opening, eyes closed. Closing the eyes can still look like a blink or clench.",
-                style = MaterialTheme.typography.labelSmall,
-            )
+
+            if (log.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "No gestures detected yet. Connect headset to start.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = FreehandColors.SandMuted,
+                    )
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(log, key = { it.id }) { e ->
+                        val gColor = FreehandColors.forGesture(e.type)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = timeFormat.format(Date(e.wallTimeMs)),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = FreehandColors.SandMuted,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                Modifier
+                                    .size(7.dp)
+                                    .background(gColor, CircleShape),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = e.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 13.sp,
+                                color = FreehandColors.Cream,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(gColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = "${(e.confidence * 100).roundToInt()}%",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = gColor,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Collapsible Debug Panel with Dark Waveform Trace
+ */
+@Composable
+private fun DebugPanel(state: UiState, trace: List<FloatArray>, vm: MainViewModel) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { vm.setDebugExpanded(!state.debugExpanded) },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Signal Diagnostics & Trace",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = FreehandColors.Cream,
+                )
+                Text(
+                    text = if (state.debugExpanded) "▲" else "▼",
+                    color = FreehandColors.Sand,
+                )
+            }
+
+            if (state.debugExpanded) {
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = FreehandColors.Ink600)
+                Spacer(Modifier.height(14.dp))
+
+                // Source selector pills
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = state.sourceKind == SourceKind.DEVICE,
+                        onClick = { vm.selectSource(SourceKind.DEVICE) },
+                        colors = RadioButtonDefaults.colors(selectedColor = FreehandColors.Flame),
+                    )
+                    Text("HALO BLE Headset", style = MaterialTheme.typography.bodyMedium)
+
+                    Spacer(Modifier.width(16.dp))
+
+                    RadioButton(
+                        selected = state.sourceKind == SourceKind.REPLAY,
+                        onClick = { vm.selectSource(SourceKind.REPLAY) },
+                        colors = RadioButtonDefaults.colors(selectedColor = FreehandColors.Flame),
+                    )
+                    Text("Replay Data", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                if (state.sourceKind == SourceKind.REPLAY) {
+                    Spacer(Modifier.height(8.dp))
+                    ReplayPicker(state, vm)
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // EEG Waveform Trace Plot
+                TracePlot(
+                    series = trace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp)
+                        .background(FreehandColors.Ink900, RoundedCornerShape(16.dp))
+                        .border(1.dp, FreehandColors.Ink600, RoundedCornerShape(16.dp))
+                        .padding(8.dp),
+                )
+
+                val p = state.pipeline
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "EEG 1-20 Hz per channel (auto-scaled, last 5 s), gyro magnitude (0-100 °/s). " +
+                        "30-100 Hz baseline clench ratio: %.1f (clench above 3.0). ".format(Locale.US, p.clenchRatio) +
+                        "Dropped packets: ${p.missedSamples}." +
+                        if (p.hasGyro == false) " Headset has no gyroscope — head motion detection disabled." else "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FreehandColors.Sand,
+                    lineHeight = 17.sp,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ArmRow(state: UiState, onArmed: (Boolean) -> Unit) {
-    val p = state.pipeline
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Switch(checked = p.armed, onCheckedChange = onArmed, enabled = p.running)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(if (p.armed) "Armed" else "Disarmed", style = MaterialTheme.typography.bodyMedium)
-            Text(p.actionBlock.text(), style = MaterialTheme.typography.labelSmall, color = if (p.actionsAllowed) Green else Grey)
+private fun ReplayPicker(state: UiState, vm: MainViewModel) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(
+            onClick = { open = true },
+            shape = CircleShape,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+            border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+        ) {
+            Text(state.replayFile ?: "Select recording file…")
         }
-    }
-}
-
-@Composable
-private fun BatteryRow(onFix: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Dot(Amber)
-        Spacer(Modifier.width(6.dp))
-        Text(
-            "Battery optimisation is on, so Android may stop the remote while the screen is off.",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onFix) { Text("Fix") }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(FreehandColors.Ink800),
+        ) {
+            state.replayFiles.forEach { name ->
+                DropdownMenuItem(
+                    text = { Text(name, color = FreehandColors.Cream) },
+                    onClick = {
+                        open = false
+                        vm.selectReplay(name)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -379,16 +880,39 @@ private fun RecalibrationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Recalibrate headset?") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Recalibrate Headset?", fontWeight = FontWeight.SemiBold) },
         text = {
             val last = if (lastCalibratedAtMs != null) " Last calibrated: ${formatDate(lastCalibratedAtMs)}." else ""
             Text(
-                "The headset was just put on or reconnected. Electrode contact changes with every fitting.$last " +
-                    "Would you like to recalibrate your gestures now?",
+                "The HALO headband was just put on or reconnected. Electrode contact impedance changes with every fitting.$last " +
+                    "Would you like to recalibrate your gesture thresholds now?",
+                lineHeight = 22.sp,
             )
         },
-        confirmButton = { Button(onClick = onCalibrate) { Text("Recalibrate") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+        confirmButton = {
+            Button(
+                onClick = onCalibrate,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Recalibrate", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) {
+                Text("Later")
+            }
+        },
     )
 }
 
@@ -396,121 +920,38 @@ private fun RecalibrationDialog(
 private fun BatteryDialog(onContinue: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Keep the remote running") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Unrestricted Background Activity", fontWeight = FontWeight.SemiBold) },
         text = {
             Text(
-                "HALO Control reads the headset all the time so your gestures keep working with the screen off. " +
-                    "Battery optimisation can pause the app or drop the Bluetooth link once the phone is in your pocket. " +
-                    "On the next screen, allow HALO Control to ignore battery optimisation. " +
-                    "The app only stays active while its notification is showing, and Stop ends it.",
+                "Freehand continuously analyzes EEG frames so your gestures keep controlling media when the screen is turned off. " +
+                    "Android battery optimization may kill background services once your phone is in your pocket. " +
+                    "Please allow Freehand to run without battery restrictions.",
+                lineHeight = 22.sp,
             )
         },
-        confirmButton = { TextButton(onClick = onContinue) { Text("Continue") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+        confirmButton = {
+            Button(
+                onClick = onContinue,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Continue", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) {
+                Text("Not Now")
+            }
+        },
     )
-}
-
-@Composable
-private fun PermissionCard(onOpenSettings: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Red.copy(alpha = 0.12f))) {
-        Column(Modifier.padding(12.dp)) {
-            Text(
-                "Bluetooth permission was denied, so the app cannot find the headset. " +
-                    "Allow \"Nearby devices\" (Android 12 and newer) or \"Location\" (Android 11 and older). " +
-                    "Replay mode in the debug panel works without it.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            TextButton(onClick = onOpenSettings) { Text("Open app settings") }
-        }
-    }
-}
-
-private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-
-@Composable
-private fun EventLog(log: List<LogEntry>, modifier: Modifier) {
-    if (log.isEmpty()) {
-        Box(modifier.fillMaxWidth()) {
-            Text("No events yet", style = MaterialTheme.typography.bodySmall, color = Grey, modifier = Modifier.padding(top = 8.dp))
-        }
-        return
-    }
-    LazyColumn(modifier.fillMaxWidth()) {
-        items(log, key = { it.id }) { e ->
-            Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(timeFormat.format(Date(e.wallTimeMs)), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                Spacer(Modifier.width(8.dp))
-                Text("t=%.2f s".format(Locale.US, e.streamTimeMs / 1000.0), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = Grey)
-                Spacer(Modifier.width(8.dp))
-                Dot(e.type.color())
-                Spacer(Modifier.width(4.dp))
-                Text(e.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Text("${(e.confidence * 100).roundToInt()} %", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DebugPanel(state: UiState, trace: List<FloatArray>, vm: MainViewModel) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable { vm.setDebugExpanded(!state.debugExpanded) }
-                .padding(vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Debug", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text(if (state.debugExpanded) "▾" else "▸")
-        }
-        if (!state.debugExpanded) return@Column
-        Column(
-            Modifier
-                .heightIn(max = 420.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = state.sourceKind == SourceKind.DEVICE, onClick = { vm.selectSource(SourceKind.DEVICE) })
-                Text("Device")
-                Spacer(Modifier.width(16.dp))
-                RadioButton(selected = state.sourceKind == SourceKind.REPLAY, onClick = { vm.selectSource(SourceKind.REPLAY) })
-                Text("Replay")
-            }
-            if (state.sourceKind == SourceKind.REPLAY) ReplayPicker(state, vm)
-            Spacer(Modifier.height(8.dp))
-            TracePlot(
-                series = trace,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(260.dp),
-            )
-            val p = state.pipeline
-            Text(
-                "EEG 1-20 Hz per channel (auto-scaled, last 5 s), gyro magnitude with 20 and 50 °/s lines. " +
-                    "30-100 Hz ratio to baseline: %.1f (clench above 3.0). ".format(Locale.US, p.clenchRatio) +
-                    "Missed samples: ${p.missedSamples}." +
-                    if (p.hasGyro == false) " This headset has no gyroscope, so head turns are off." else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = Grey,
-            )
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-@Composable
-private fun ReplayPicker(state: UiState, vm: MainViewModel) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { open = true }) { Text(state.replayFile ?: "Choose a recording") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            state.replayFiles.forEach { name ->
-                DropdownMenuItem(text = { Text(name) }, onClick = {
-                    open = false
-                    vm.selectReplay(name)
-                })
-            }
-        }
-    }
 }

@@ -26,6 +26,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -110,14 +113,18 @@ fun CalibrationRoute(
     }
     BackHandler(enabled = running) { vm.cancel() }
 
-    Scaffold(modifier) { padding ->
+    Scaffold(
+        modifier = modifier,
+        containerColor = FreehandColors.Ink900,
+        contentColor = FreehandColors.Cream,
+    ) { padding ->
         Column(
             Modifier
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .fillMaxSize(),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(16.dp))
             when (current) {
                 CalibrationScreen.Intro -> Intro(profile, plan, onStart = vm::start, onCancel = vm::discard)
                 is CalibrationScreen.Running -> when (val s = current.state) {
@@ -164,10 +171,25 @@ private fun Intro(profile: UserProfile, plan: CalibrationPlan, onStart: (List<Ca
                 Text(g.title)
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onCancel) { Text("Cancel") }
-            Button(onClick = { onStart(CalibrationGesture.entries.filter { it in selected }) }, enabled = selected.isNotEmpty()) { Text("Start") }
+            OutlinedButton(
+                onClick = onCancel,
+                shape = CircleShape,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                modifier = Modifier.height(48.dp),
+            ) { Text("Cancel") }
+            Button(
+                onClick = { onStart(CalibrationGesture.entries.filter { it in selected }) },
+                enabled = selected.isNotEmpty(),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+                modifier = Modifier.height(48.dp),
+            ) { Text("Start Calibration", fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -236,8 +258,9 @@ private fun StepView(state: CalibrationState.Running, onCancel: () -> Unit) {
     state.trial?.let { Text("Trial ${it + 1} of ${state.trials}", style = MaterialTheme.typography.bodyMedium) }
     Spacer(Modifier.height(12.dp))
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (now) accent.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (now) accent.copy(alpha = 0.2f) else FreehandColors.Ink800),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (now) accent.copy(alpha = 0.6f) else FreehandColors.Ink600),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp)) {
@@ -354,11 +377,31 @@ private fun Results(
             Spacer(Modifier.height(8.dp))
             Text(it, color = Red, style = MaterialTheme.typography.bodyMedium)
         }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onDiscard) { Text("Discard") }
-            OutlinedButton(onClick = onPractice) { Text("Try it") }
-            Button(onClick = { onSave(keepRaw) }) { Text("Save") }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onDiscard,
+                shape = CircleShape,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                modifier = Modifier.height(48.dp),
+            ) { Text("Discard") }
+            OutlinedButton(
+                onClick = onPractice,
+                shape = CircleShape,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
+                modifier = Modifier.height(48.dp),
+            ) { Text("Try it") }
+            Button(
+                onClick = { onSave(keepRaw) },
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+                modifier = Modifier.height(48.dp),
+            ) { Text("Save Calibration", fontWeight = FontWeight.Bold) }
         }
         Spacer(Modifier.height(16.dp))
     }

@@ -16,8 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import com.heroesofthebrain.halo.ui.theme.FreehandTheme
 import androidx.core.content.ContextCompat
 import com.heroesofthebrain.halo.service.StartPermissions
 import com.heroesofthebrain.halo.ui.MainScreen
@@ -38,7 +37,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            FreehandTheme(darkTheme = true) {
                 MainScreen(vm, onConnect = ::connect, onAllowBackground = ::requestBatteryExemption)
             }
         }

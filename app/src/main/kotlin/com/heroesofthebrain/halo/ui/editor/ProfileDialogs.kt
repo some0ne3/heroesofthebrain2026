@@ -1,6 +1,7 @@
 package com.heroesofthebrain.halo.ui.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -30,9 +34,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.heroesofthebrain.halo.rules.BindingProfile
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 
 @Composable
 fun NewProfileDialog(
@@ -44,33 +50,52 @@ fun NewProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Profile") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("New Profile", fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Profile Name") },
-                    placeholder = { Text("e.g. Walking, Podcast Mode") },
+                    placeholder = { Text("e.g. Walking, Workout, Podcasts") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = copyDefault, onCheckedChange = { copyDefault = it })
-                    Text("Preload with default media bindings", style = MaterialTheme.typography.bodySmall)
+                    Checkbox(
+                        checked = copyDefault,
+                        onCheckedChange = { copyDefault = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = FreehandColors.Flame,
+                            checkmarkColor = FreehandColors.Ink900,
+                        ),
+                    )
+                    Text("Preload with default media bindings", style = MaterialTheme.typography.bodySmall, color = FreehandColors.Cream)
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = { onConfirm(name.trim().ifEmpty { "New Profile" }, copyDefault) },
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
             ) {
-                Text("Create")
+                Text("Create", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
@@ -85,7 +110,11 @@ fun RenameProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename Profile") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Rename Profile", fontWeight = FontWeight.SemiBold) },
         text = {
             OutlinedTextField(
                 value = name,
@@ -98,12 +127,20 @@ fun RenameProfileDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(name.trim().ifEmpty { currentName }) },
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
             ) {
-                Text("Rename")
+                Text("Rename", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
@@ -118,7 +155,11 @@ fun DuplicateProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Duplicate Profile") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Duplicate Profile", fontWeight = FontWeight.SemiBold) },
         text = {
             OutlinedTextField(
                 value = name,
@@ -131,12 +172,20 @@ fun DuplicateProfileDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(name.trim().ifEmpty { "$originalName Copy" }) },
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
             ) {
-                Text("Duplicate")
+                Text("Duplicate", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
@@ -149,20 +198,28 @@ fun DeleteProfileDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete Profile?") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Delete Profile?", fontWeight = FontWeight.SemiBold) },
         text = {
             Text("Are you sure you want to delete '$profileName'? This cannot be undone.")
         },
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = FreehandColors.Error, contentColor = FreehandColors.Ink900),
             ) {
-                Text("Delete")
+                Text("Delete", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
@@ -178,35 +235,45 @@ fun ExportProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Export Profile (JSON)") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Export Profile (JSON)", fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
                 Text(
                     text = "Profile: ${profile.name} (${profile.bindings.size} bindings)",
                     style = MaterialTheme.typography.bodySmall,
+                    color = FreehandColors.Sand,
                 )
                 Spacer(Modifier.height(8.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .verticalScroll(rememberScrollState())
-                        .padding(8.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(FreehandColors.Ink900)
+                        .border(1.dp, FreehandColors.Ink600, RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                        .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
                         text = jsonText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
+                        color = FreehandColors.Cream,
                     )
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 OutlinedButton(
                     onClick = {
                         clipboard.setText(AnnotatedString(jsonText))
                         copied = true
                     },
+                    shape = CircleShape,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = FreehandColors.Cream),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink600),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (copied) "Copied to Clipboard!" else "Copy JSON to Clipboard")
@@ -214,7 +281,16 @@ fun ExportProfileDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss) { Text("Done") }
+            Button(
+                onClick = onDismiss,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Done", fontWeight = FontWeight.Bold)
+            }
         },
     )
 }
@@ -230,10 +306,14 @@ fun ImportProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import Profile (JSON)") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Import Profile (JSON)", fontWeight = FontWeight.SemiBold) },
         text = {
             Column {
-                Text("Paste exported JSON below:", style = MaterialTheme.typography.bodySmall)
+                Text("Paste exported Freehand profile JSON below:", style = MaterialTheme.typography.bodySmall, color = FreehandColors.Sand)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = text,
@@ -246,7 +326,7 @@ fun ImportProfileDialog(
                 )
                 if (error != null) {
                     Spacer(Modifier.height(6.dp))
-                    Text(error, color = Color(0xFFE53935), style = MaterialTheme.typography.bodySmall)
+                    Text(error, color = FreehandColors.Error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(Modifier.height(6.dp))
                 TextButton(
@@ -254,6 +334,7 @@ fun ImportProfileDialog(
                         val clip = clipboard.getText()?.text
                         if (!clip.isNullOrBlank()) text = clip
                     },
+                    colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Flame),
                 ) {
                     Text("Paste from Clipboard")
                 }
@@ -263,12 +344,20 @@ fun ImportProfileDialog(
             Button(
                 onClick = { onImport(text) },
                 enabled = text.isNotBlank(),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
             ) {
-                Text("Import")
+                Text("Import", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
@@ -280,15 +369,31 @@ fun ResetDefaultDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Restore Default Profile?") },
+        containerColor = FreehandColors.Ink800,
+        titleContentColor = FreehandColors.Cream,
+        textContentColor = FreehandColors.Sand,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("Restore Default Profile?", fontWeight = FontWeight.SemiBold) },
         text = {
             Text("This will replace current bindings with the default media control bindings (Play/Pause, Next, Previous, Volume Up/Down).")
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("Restore Defaults") }
+            Button(
+                onClick = onConfirm,
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = FreehandColors.Flame,
+                    contentColor = FreehandColors.Ink900,
+                ),
+            ) {
+                Text("Restore Defaults", fontWeight = FontWeight.Bold)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = FreehandColors.Sand),
+            ) { Text("Cancel") }
         },
     )
 }
