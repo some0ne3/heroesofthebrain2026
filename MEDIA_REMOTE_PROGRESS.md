@@ -10,9 +10,10 @@ Snapshot of 2026-11-14. The task spec is `MEDIA_REMOTE_TASKS.md` (untracked, nex
 | 1. Background service | Done, task 3 merged in, 61 tests pass | `media-remote/service` @ `59722c0` |
 | 2. Media output | Done | `media-remote/media` @ `61a210f` |
 | 3. Detector as states | Done | `media-remote/detector-states` @ `d2b9aba` |
-| 4. Calibration | In progress, not committed | worktree `.claude/worktrees/agent-aa6ee812a1ce6a3f4` (based on `d2b9aba`) |
+| 4. Calibration | Done | `media-remote/calibration` @ `d3e95db` |
+| Integration | Done, 88 tests pass | `media-remote/integrated` @ `a7cd7ef` |
 
-Integration of all branches into one has not started.
+Integration of all branches into `media-remote/integrated` is complete and wired.
 
 ## If the two running agents did not finish
 
@@ -85,24 +86,19 @@ Check first: `git branch --list 'media-remote/*'`. If `media-remote/calibration`
 - 25 tests. Manifest changes are additions only. No serialization plugin, so `MediaCommand` is not `@Serializable` yet; task 5 needs that.
 - Android delays a single play/pause by about 300 ms and turns two quick presses into "next". Task 5 must not repeat play/pause faster than that.
 
-## Integration (not started)
+## Integration (done @ `a7cd7ef`)
 
-Do it in a separate worktree. Don't merge in the main checkout.
-
-```sh
-git worktree add .claude/worktrees/integrate -b worktree-integrate media-remote/service   # already contains task 3
-cd .claude/worktrees/integrate
-git merge media-remote/media          # expect a manifest conflict with the service entries: keep both
-git merge media-remote/calibration    # task 3 is shared, so only build files and calibration should differ
-nix develop -c ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx1536m -Pkotlin.compiler.execution.strategy=in-process testDebugUnitTest assembleDebug
-git branch -f media-remote/integrated HEAD
-```
-
-Wiring still to do after the merge (nothing is connected yet):
-- Host `CalibrationRoute` and `PracticeRoute` from `MainScreen`, fed by the service's frame and gesture flows.
-- Load the saved per-user `DetectorConfig` into `HaloPipeline` when it builds the `Detector`.
-- Trigger the "recalibrate?" prompt when the headset connects after a disconnect.
-- The media layer is not called by anything yet. That is task 5 (rule engine), and it must check `ActionGate.actionsAllowed` before every action.
+Completed in worktree `.claude/worktrees/integrate` on branch `media-remote/integrated`.
+1. Merged `media-remote/service` (includes task 3) + `media-remote/media` (manifest conflict resolved keeping both service and media activities/services).
+2. Merged `media-remote/calibration` cleanly with `serialization` plugin.
+3. Completed the wiring:
+   - Hosted `CalibrationRoute` and `PracticeRoute` directly from `MainScreen`, fed by `pipeline.frames` and `pipeline.events`.
+   - Wired `CalibrationStore.activeConfig()` into `HaloPipeline` via `configProvider` so the `Detector` runs with the active user's calibrated thresholds.
+   - Connected `RecalibrationPolicy` to trigger the "recalibrate?" dialog on `MainScreen` whenever the headset refits/reconnects after disconnect.
+   - Added Calibrate and Practice action buttons to `MainScreen`.
+4. Verification:
+   - All 88 unit tests pass (`testDebugUnitTest`).
+   - Debug APK builds successfully (`assembleDebug`).
 
 ## Needs a phone
 
