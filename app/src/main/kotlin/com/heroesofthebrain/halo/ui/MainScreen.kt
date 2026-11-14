@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -221,18 +222,22 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
                 ) {
                     FreehandHeaderLockup(symbolHeight = 26.dp)
 
-                    // Source pill badge
+                    // Source pill badge: headset name once one has been seen this session
                     Box(
                         modifier = Modifier
+                            .padding(start = 12.dp)
+                            .weight(1f, fill = false)
                             .background(FreehandColors.Ink800, CircleShape)
                             .border(1.dp, FreehandColors.Ink600, CircleShape)
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         Text(
-                            text = if (state.sourceKind == SourceKind.DEVICE) "HALO BLE" else "REPLAY",
+                            text = if (state.sourceKind == SourceKind.DEVICE) state.deviceName ?: "HALO" else "REPLAY",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = FreehandColors.Sand,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

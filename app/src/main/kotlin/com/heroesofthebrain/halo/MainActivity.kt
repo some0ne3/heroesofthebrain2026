@@ -10,12 +10,19 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.Modifier
+import com.heroesofthebrain.halo.ui.theme.FreehandColors
 import com.heroesofthebrain.halo.ui.theme.FreehandTheme
 import androidx.core.content.ContextCompat
 import com.heroesofthebrain.halo.service.StartPermissions
@@ -34,11 +41,23 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // The app is always dark, so force light bar icons even when the phone itself is in light mode.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         setContent {
             FreehandTheme(darkTheme = true) {
-                MainScreen(vm, onConnect = ::connect, onAllowBackground = ::requestBatteryExemption)
+                // Several screens use hand-made top bars that ignore insets, so keep everything out of the system bars here.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(FreehandColors.Ink900)
+                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                ) {
+                    MainScreen(vm, onConnect = ::connect, onAllowBackground = ::requestBatteryExemption)
+                }
             }
         }
     }

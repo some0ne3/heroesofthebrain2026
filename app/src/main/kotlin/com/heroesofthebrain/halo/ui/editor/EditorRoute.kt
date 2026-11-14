@@ -7,11 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -268,51 +270,6 @@ fun EditorRoute(
                 }
             }
 
-            // Inactive profile banner
-            if (state.selectedProfileId != state.activeProfileId) {
-                item {
-                    Card(
-                        shape = RoundedCornerShape(10.dp),
-                        colors = CardDefaults.cardColors(containerColor = Amber.copy(alpha = 0.12f)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Amber.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { vm.setActiveProfile(state.selectedProfileId) },
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = "This profile is not active on the remote",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                )
-                                Text(
-                                    text = "Remote controls currently run the active profile. Tap to activate this profile.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Grey,
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Button(
-                                onClick = { vm.setActiveProfile(state.selectedProfileId) },
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Text("Activate", fontSize = 12.sp)
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                }
-            }
-
             // Ambiguity warning banner if any warnings
             if (state.ambiguityWarnings.isNotEmpty()) {
                 item {
@@ -337,7 +294,7 @@ fun EditorRoute(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(
                             text = "GESTURE BINDINGS (${state.currentProfile.bindings.size})",
                             style = MaterialTheme.typography.labelSmall,
@@ -352,9 +309,8 @@ fun EditorRoute(
                             color = Grey,
                         )
                     }
-                    Button(onClick = vm::startNewBinding) {
-                        Text("+ Add")
-                    }
+                    Spacer(Modifier.width(12.dp))
+                    AddPillButton("Add", onClick = vm::startNewBinding)
                 }
                 Spacer(Modifier.height(10.dp))
             }
@@ -403,6 +359,29 @@ fun EditorRoute(
 
             item { Spacer(Modifier.height(30.dp)) }
         }
+    }
+}
+
+// Sized to its label: the default Button minimum is too tall for section headers and wraps the text when squeezed.
+@Composable
+internal fun AddPillButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Button(
+        onClick = onClick,
+        shape = CircleShape,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = FreehandColors.Flame,
+            contentColor = FreehandColors.Ink900,
+        ),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+        modifier = modifier.heightIn(min = 34.dp),
+    ) {
+        Text(
+            text = "+ $label",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 

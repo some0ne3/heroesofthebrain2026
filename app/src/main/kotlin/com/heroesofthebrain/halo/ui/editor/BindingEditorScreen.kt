@@ -849,11 +849,14 @@ private fun SequenceTriggerEditor(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Gestures in Sequence (${gestures.size})", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Gestures in Sequence (${gestures.size})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                )
                 Box {
-                    Button(onClick = { showAddMenu = true }) {
-                        Text("+ Add Step")
-                    }
+                    AddPillButton("Add Step", onClick = { showAddMenu = true })
                     DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
                         GestureType.values().forEach { g ->
                             DropdownMenuItem(
@@ -1044,10 +1047,13 @@ private fun MacroActionEditor(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Macro Steps (${steps.size})", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Button(onClick = { steps.add(MacroStep(MediaCommand.VolumeUp, 150L)) }) {
-                    Text("+ Add Step")
-                }
+                Text(
+                    "Macro Steps (${steps.size})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                )
+                AddPillButton("Add Step", onClick = { steps.add(MacroStep(MediaCommand.VolumeUp, 150L)) })
             }
 
             Spacer(Modifier.height(10.dp))

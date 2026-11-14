@@ -51,7 +51,19 @@ data class UiState(
     val showBatteryDialog: Boolean = false,
     val activeScreen: ActiveScreen = ActiveScreen.MAIN,
     val recalibrationOffer: RecalibrationOffer? = null,
+    val deviceName: String? = null,
 )
+
+// Reconnecting carries no name, so callers keep the last one they saw instead of blanking it.
+internal fun headsetName(p: PipelineState): String? {
+    if (p.source != SourceRequest.Headset) return null
+    val name = when (val s = p.status) {
+        is SourceStatus.Connecting -> s.device
+        is SourceStatus.Streaming -> s.device
+        else -> null
+    }
+    return name?.takeIf { it.isNotBlank() }
+}
 
 // Only observes: the run belongs to HaloService, so it carries on when this screen goes away.
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -80,7 +92,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         recalibrationPolicy.lastCalibratedAtMs = store.activeProfileId?.let { store.latest(it) }?.createdAtMs
         viewModelScope.launch {
             pipeline.state.collect { p ->
-                _ui.update { it.copy(pipeline = p) }
+                _ui.update { it.copy(pipeline = p, deviceName = headsetName(p) ?: it.deviceName) }
                 val streaming = p.status is SourceStatus.Streaming
                 val contactCount = p.channels.count { it.contact }
                 recalibrationPolicy.onHeadset(
@@ -108,6 +120,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
             sourceKind = if (replay != null) SourceKind.REPLAY else SourceKind.DEVICE,
             replayFiles = files,
             replayFile = replay?.file ?: files.firstOrNull { it == DEFAULT_REPLAY } ?: files.firstOrNull(),
+            deviceName = headsetName(current),
         )
     }
 
