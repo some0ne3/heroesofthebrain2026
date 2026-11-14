@@ -1,22 +1,28 @@
 package com.heroesofthebrain.halo.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.heroesofthebrain.halo.detect.ControlEvent
-import com.heroesofthebrain.halo.detect.ControlType
-import com.heroesofthebrain.halo.detect.Detector
-import com.heroesofthebrain.halo.eeg.BrainAccessSource
-import com.heroesofthebrain.halo.eeg.EEG_LABELS
-import com.heroesofthebrain.halo.eeg.EegSource
-import com.heroesofthebrain.halo.eeg.ReplaySource
+import com.heroesofthebrain.halo.calibration.CalibrationStore
+import com.heroesofthebrain.halo.calibration.RecalibrationOffer
+import com.heroesofthebrain.halo.calibration.RecalibrationPolicy
+import com.heroesofthebrain.halo.calibration.StoredCalibration
+import com.heroesofthebrain.halo.calibration.UserProfile
+import com.heroesofthebrain.halo.detect.GestureCancel
+import com.heroesofthebrain.halo.detect.GestureEnd
+import com.heroesofthebrain.halo.detect.GestureEvent
+import com.heroesofthebrain.halo.detect.GestureType
+import com.heroesofthebrain.halo.detect.describe
+import com.heroesofthebrain.halo.eeg.EegFrame
 import com.heroesofthebrain.halo.eeg.SourceStatus
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import com.heroesofthebrain.halo.service.HaloRuntime
+import com.heroesofthebrain.halo.service.HaloService
+import com.heroesofthebrain.halo.service.PipelineState
+import com.heroesofthebrain.halo.service.SourceRequest
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,145 +32,191 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class SourceKind { DEVICE, REPLAY }
 
-data class LogEntry(val id: Long, val wallTimeMs: Long, val streamTimeMs: Long, val type: ControlType, val confidence: Float)
+enum class ActiveScreen { MAIN, CALIBRATION, PRACTICE }
 
-data class ChannelIndicator(val label: String, val contact: Boolean, val signalOk: Boolean)
+data class LogEntry(val id: Long, val wallTimeMs: Long, val streamTimeMs: Long, val type: GestureType, val text: String, val confidence: Float)
 
 data class UiState(
-    val label: ControlType = ControlType.NONE,
+    val pipeline: PipelineState = PipelineState(),
+    val label: GestureType? = null,
     val confidence: Float = 0f,
-    val status: SourceStatus = SourceStatus.Idle,
-    val running: Boolean = false,
-    val batteryPct: Float? = null,
-    val channels: List<ChannelIndicator> = EEG_LABELS.map { ChannelIndicator(it, contact = false, signalOk = false) },
-    val hasGyro: Boolean? = null,
-    val clenchRatio: Double = 0.0,
-    val missedSamples: Long = 0,
     val log: List<LogEntry> = emptyList(),
     val sourceKind: SourceKind = SourceKind.DEVICE,
     val replayFiles: List<String> = emptyList(),
     val replayFile: String? = null,
     val debugExpanded: Boolean = false,
     val permissionDenied: Boolean = false,
+    // Assume exempt until MainActivity has checked, so the warning does not flash on launch.
+    val batteryExempt: Boolean = true,
+    val showBatteryDialog: Boolean = false,
+    val activeScreen: ActiveScreen = ActiveScreen.MAIN,
+    val recalibrationOffer: RecalibrationOffer? = null,
 )
 
+// Only observes: the run belongs to HaloService, so it carries on when this screen goes away.
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
+
+    private val pipeline = HaloRuntime.pipeline(app)
+    val store = CalibrationStore.inAppStorage(app)
+    val recalibrationPolicy = RecalibrationPolicy()
+
+    val frames: Flow<EegFrame> get() = pipeline.frames
+    val events: Flow<GestureEvent> get() = pipeline.events
 
     private val _ui = MutableStateFlow(initialState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
-    private val _trace = MutableStateFlow<List<FloatArray>>(emptyList())
-    val trace: StateFlow<List<FloatArray>> = _trace.asStateFlow()
+    val trace: StateFlow<List<FloatArray>> = pipeline.trace
 
-    // Created on first use so Replay mode never touches Bluetooth.
-    private val device by lazy { BrainAccessSource(app) }
-
-    @Volatile
-    private var runJob: Job? = null
-
-    @Volatile
     private var holdJob: Job? = null
     private val nextLogId = AtomicLong()
 
-    private fun initialState(): UiState {
-        val files = app.assets.list(REPLAY_DIR).orEmpty().filter { it.endsWith(".csv") }.map { it.removeSuffix(".csv") }.sorted()
-        return UiState(replayFiles = files, replayFile = files.firstOrNull { it == DEFAULT_REPLAY } ?: files.firstOrNull())
+    var notificationsAsked = false
+        private set
+    private var batteryPromptDismissed = false
+
+    init {
+        recalibrationPolicy.lastCalibratedAtMs = store.activeProfileId?.let { store.latest(it) }?.createdAtMs
+        viewModelScope.launch {
+            pipeline.state.collect { p ->
+                _ui.update { it.copy(pipeline = p) }
+                val streaming = p.status is SourceStatus.Streaming
+                val contactCount = p.channels.count { it.contact }
+                recalibrationPolicy.onHeadset(
+                    streaming = streaming,
+                    channelsWithContact = contactCount,
+                    nowMs = SystemClock.elapsedRealtime(),
+                )
+            }
+        }
+        viewModelScope.launch {
+            recalibrationPolicy.offer.collect { offer ->
+                _ui.update { it.copy(recalibrationOffer = offer) }
+            }
+        }
+        viewModelScope.launch { pipeline.events.collect(::show) }
     }
 
+    private fun initialState(): UiState {
+        val files = app.assets.list(HaloRuntime.REPLAY_DIR).orEmpty().filter { it.endsWith(".csv") }.map { it.removeSuffix(".csv") }.sorted()
+        val current = pipeline.state.value
+        // Reopened while the service is still running a replay: show that instead of the defaults.
+        val replay = (current.source as? SourceRequest.Replay)?.takeIf { current.running }
+        return UiState(
+            pipeline = current,
+            sourceKind = if (replay != null) SourceKind.REPLAY else SourceKind.DEVICE,
+            replayFiles = files,
+            replayFile = replay?.file ?: files.firstOrNull { it == DEFAULT_REPLAY } ?: files.firstOrNull(),
+        )
+    }
+
+    // MainActivity calls this once the permissions the source needs are granted.
     fun start() {
-        if (runJob?.let { it.isActive && !it.isCancelled } == true) return
         val state = _ui.value
-        val source: EegSource = when (state.sourceKind) {
-            SourceKind.DEVICE -> device
-            SourceKind.REPLAY -> {
-                val file = state.replayFile ?: return
-                ReplaySource(file) { app.assets.open("$REPLAY_DIR/$file.csv") }
-            }
+        val request = when (state.sourceKind) {
+            SourceKind.DEVICE -> SourceRequest.Headset
+            SourceKind.REPLAY -> SourceRequest.Replay(state.replayFile ?: return)
         }
         holdJob?.cancel()
-        _trace.value = emptyList()
         _ui.update {
             it.copy(
-                running = true, permissionDenied = false, log = emptyList(), label = ControlType.NONE,
-                confidence = 0f, batteryPct = null, hasGyro = null, missedSamples = 0, clenchRatio = 0.0,
+                permissionDenied = false, log = emptyList(), label = null, confidence = 0f,
+                showBatteryDialog = it.sourceKind == SourceKind.DEVICE && !it.batteryExempt && !batteryPromptDismissed,
             )
         }
-        val previous = runJob
-        runJob = viewModelScope.launch(Dispatchers.Default) {
-            val self = coroutineContext.job
-            // The previous run may still be disconnecting the shared BLE client; let it finish first.
-            previous?.cancelAndJoin()
-            val statusJob = launch { source.status.collect { s -> _ui.update { it.copy(status = s) } } }
-            var detector: Detector? = null
-            try {
-                source.frames().collect { frame ->
-                    val d = detector?.takeIf { it.sampleRate == frame.sampleRate } ?: Detector(frame.sampleRate).also { detector = it }
-                    val events = d.process(frame)
-                    val ok = d.channelOk
-                    _ui.update { s ->
-                        s.copy(
-                            batteryPct = frame.batteryPct.takeIf { it >= 0f },
-                            channels = EEG_LABELS.mapIndexed { i, label -> ChannelIndicator(label, frame.contact[i], ok[i]) },
-                            hasGyro = frame.gyro != null,
-                            clenchRatio = d.lastRatio,
-                            missedSamples = d.missedSamples,
-                        )
-                    }
-                    events.forEach(::show)
-                    if (_ui.value.debugExpanded) _trace.value = d.trace.snapshot()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _ui.update { it.copy(status = SourceStatus.Failed(e.message ?: e.javaClass.simpleName)) }
-            } finally {
-                statusJob.cancel()
-                if (runJob === self) {
-                    _ui.update { s -> s.copy(running = false, status = if (s.status is SourceStatus.Failed) s.status else source.status.value) }
-                }
-            }
+        try {
+            HaloService.start(app, request)
+        } catch (e: RuntimeException) {
+            pipeline.fail("Could not start the background service: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
-    // Keeps the reference so the next start() can wait for this run's cleanup.
-    fun stop() {
-        runJob?.cancel()
-    }
+    fun stop() = HaloService.stop(app)
+
+    fun setArmed(armed: Boolean) = pipeline.setArmed(armed)
 
     fun selectSource(kind: SourceKind) {
         if (kind == _ui.value.sourceKind) return
         stop()
-        _ui.update { it.copy(sourceKind = kind, status = SourceStatus.Idle, permissionDenied = false) }
+        _ui.update { it.copy(sourceKind = kind, permissionDenied = false) }
     }
 
     fun selectReplay(name: String) {
         stop()
-        _ui.update { it.copy(replayFile = name, status = SourceStatus.Idle) }
+        _ui.update { it.copy(replayFile = name) }
     }
 
-    fun setDebugExpanded(expanded: Boolean) = _ui.update { it.copy(debugExpanded = expanded) }
-
-    fun onPermissionResult(granted: Boolean) {
-        if (granted) start() else _ui.update { it.copy(permissionDenied = true) }
+    fun setDebugExpanded(expanded: Boolean) {
+        pipeline.traceEnabled = expanded
+        _ui.update { it.copy(debugExpanded = expanded) }
     }
 
-    private fun show(event: ControlEvent) {
-        val entry = LogEntry(nextLogId.incrementAndGet(), System.currentTimeMillis(), event.timestampMs, event.type, event.confidence)
-        _ui.update { it.copy(label = event.type, confidence = event.confidence, log = (listOf(entry) + it.log).take(LOG_SIZE)) }
+    fun onPermissionDenied() = _ui.update { it.copy(permissionDenied = true) }
+
+    fun markNotificationsAsked() {
+        notificationsAsked = true
+    }
+
+    fun setBatteryExempt(exempt: Boolean) = _ui.update { it.copy(batteryExempt = exempt, showBatteryDialog = it.showBatteryDialog && !exempt) }
+
+    fun dismissBatteryDialog() {
+        batteryPromptDismissed = true
+        _ui.update { it.copy(showBatteryDialog = false) }
+    }
+
+    fun openCalibration() {
+        recalibrationPolicy.dismiss()
+        _ui.update { it.copy(activeScreen = ActiveScreen.CALIBRATION) }
+    }
+
+    fun openPractice() {
+        _ui.update { it.copy(activeScreen = ActiveScreen.PRACTICE) }
+    }
+
+    fun closeChildScreen() {
+        _ui.update { it.copy(activeScreen = ActiveScreen.MAIN) }
+    }
+
+    fun dismissRecalibration() = recalibrationPolicy.dismiss()
+
+    fun activeProfile(): UserProfile {
+        val activeId = store.activeProfileId
+        val existing = activeId?.let { store.profile(it) } ?: store.profiles().firstOrNull()
+        if (existing != null) {
+            if (store.activeProfileId != existing.id) store.activeProfileId = existing.id
+            return existing
+        }
+        val created = store.createProfile("Default")
+        store.activeProfileId = created.id
+        return created
+    }
+
+    fun onCalibrationFinished(stored: StoredCalibration?) {
+        if (stored != null) {
+            recalibrationPolicy.onCalibrated(stored.createdAtMs)
+        }
+        _ui.update { it.copy(activeScreen = ActiveScreen.MAIN) }
+    }
+
+    private fun show(event: GestureEvent) {
+        val entry = LogEntry(nextLogId.incrementAndGet(), System.currentTimeMillis(), event.timestampMs, event.type, event.describe(), event.confidence)
+        _ui.update { it.copy(log = (listOf(entry) + it.log).take(LOG_SIZE)) }
+        // Ends and cancels only go to the log; the label shows what was just recognised.
+        if (event is GestureEnd || event is GestureCancel) return
+        _ui.update { it.copy(label = event.type, confidence = event.confidence) }
         // Hold the label briefly so it can be read, then fall back to NONE.
         holdJob?.cancel()
         holdJob = viewModelScope.launch {
             delay(HOLD_MS)
-            _ui.update { it.copy(label = ControlType.NONE, confidence = 0f) }
+            _ui.update { it.copy(label = null, confidence = 0f) }
         }
     }
 
     override fun onCleared() {
-        stop()
+        pipeline.traceEnabled = false
     }
 
     private companion object {
-        const val REPLAY_DIR = "replay"
         const val DEFAULT_REPLAY = "szczeka-docisk"
         const val HOLD_MS = 750L
         const val LOG_SIZE = 50

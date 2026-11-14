@@ -11,6 +11,7 @@ Snapshot of 2026-11-14. The task spec is `MEDIA_REMOTE_TASKS.md` (untracked, nex
 | 2. Media output | Done | `media-remote/media` @ `61a210f` |
 | 3. Detector as states | Done | `media-remote/detector-states` @ `d2b9aba` |
 | 4. Calibration | Done | `media-remote/calibration` @ `d3e95db` |
+| 5. Rules & Engine | Done, 26 new tests (114 total) pass | `media-remote/rules` |
 | Integration | Done, 88 tests pass | `media-remote/integrated` @ `a7cd7ef` |
 
 Integration of all branches into `media-remote/integrated` is complete and wired.

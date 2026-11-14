@@ -3,6 +3,15 @@
 
     <!-- BLE permissions and the bluetooth_le feature are merged in from transport-android-release.aar -->
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Only for Replay mode, which has no Bluetooth link to justify connectedDevice on Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="false"
         android:label="HALO Control"
@@ -17,5 +26,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".service.HaloService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Replays a recorded EEG session through the gesture pipeline so the remote can be tested without the headset" />
+        </service>
+
+        <!-- Manual test bench for media output, see docs/media-compat.md -->
+        <activity
+            android:name=".media.MediaTestActivity"
+            android:exported="true"
+            android:label="HALO Media Test"
+            android:screenOrientation="portrait"
+            android:taskAffinity="com.heroesofthebrain.halo.mediatest">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Only needed so MediaSessionManager.getActiveSessions works. Only the system can bind it. -->
+        <service
+            android:name=".media.MediaListenerService"
+            android:exported="true"
+            android:label="HALO Control media controls"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

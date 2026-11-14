@@ -55,7 +55,8 @@ class BrainAccessSource(context: Context) : EegSource {
                         failures = 0
                         try {
                             _status.value = SourceStatus.Streaming(device.name)
-                            streamUntilLost(session) { send(it) }
+                            // Report the loss before disconnecting, which can take a while on a dead link.
+                            streamUntilLost(session) { send(it) }.also { _status.value = SourceStatus.Reconnecting(it) }
                         } finally {
                             withContext(NonCancellable) { runCatching { client.disconnect(device.id) } }
                         }

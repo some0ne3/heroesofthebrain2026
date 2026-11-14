@@ -11,16 +11,6 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-enum class ControlType { CLENCH, HEAD_TURN_HORIZONTAL, HEAD_TURN_VERTICAL, DOUBLE_BLINK, LONG_BLINK, NONE }
-
-data class ControlEvent(
-    val type: ControlType,
-    // Heuristic 0..1 (how far past the threshold, times signal quality), NOT a calibrated probability.
-    val confidence: Float,
-    // Stream time since the detector started, gaps included.
-    val timestampMs: Long,
-)
-
 // Values tuned with causal filters on recordings/ses-001 and ses-002 (see tools/convert_recordings.py and DetectorReplayTest).
 data class DetectorConfig(
     val warmupS: Double = 0.5,
@@ -39,6 +29,14 @@ data class DetectorConfig(
     val turnGyroDps: Double = 50.0,
     val turnMinS: Double = 0.1,
     val turnReleaseFraction: Double = 0.6,
+    // Nods in obrot-glowa-pion reach 16-34 deg from the start pose, horizontal swings 33-61 (tools/gesture_ground_truth.py).
+    val turnMinDeg: Double = 12.0,
+    // Coming back later than this counts as a turn of its own, since gyro drift makes the old pose unreliable.
+    val turnReturnMaxS: Double = 6.0,
+    // PROVISIONAL until checked on a device. The accelerometer puts +y up in every recording, so by the right-hand
+    // rule +y should be a left turn. A lid-closing kick (band pulled down at the front) reads -z, so +z should be up.
+    val turnLeftIsPositiveY: Boolean = true,
+    val turnUpIsPositiveZ: Boolean = true,
     val blinkLobeUv: Double = 300.0,
     val blinkMinGapS: Double = 0.15,
     val blinkMaxGapS: Double = 0.6,
@@ -114,22 +112,22 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
 
     val channelOk: BooleanArray get() = quality.ok.copyOf()
 
-    fun process(frame: EegFrame): List<ControlEvent> {
+    fun process(frame: EegFrame): List<GestureEvent> {
         require(frame.sampleRate == sampleRate) { "Detector built for $sampleRate Hz got ${frame.sampleRate} Hz" }
-        val out = ArrayList<ControlEvent>(2)
+        val out = ArrayList<GestureEvent>(2)
         contact = frame.contact
         for (s in 0 until frame.sampleCount) {
             val index = frame.firstSampleIndex + s
             if (lastIndex != Long.MIN_VALUE && index != lastIndex + 1) {
                 if (index > lastIndex + 1) clock += index - lastIndex - 1
-                resetPending = true
+                interrupt(out)
             }
             lastIndex = index
             // Gap-filled samples are all zeros; feeding them would look like a huge artefact.
             if (frame.isDummy[s]) {
                 missedSamples++
+                interrupt(out)
                 clock++
-                resetPending = true
                 continue
             }
             if (resetPending) {
@@ -141,6 +139,13 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
             sinceReset++
         }
         return out
+    }
+
+    // A hold that spans a gap cannot be measured, so it is cancelled right away rather than when samples return.
+    private fun interrupt(out: MutableList<GestureEvent>) {
+        resetPending = true
+        clenchStart?.let { out += GestureCancel(GestureType.CLENCH, ms(clock / fs), it.confidence, CancelReason.SIGNAL_LOST) }
+        clenchStart = null
     }
 
     private fun resetAt(frame: EegFrame, s: Int) {
@@ -165,9 +170,11 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         warmUntilS = nowS + cfg.warmupS
         quality.reset(nowS)
         clenchSinceS = -1.0
-        clenchFired = false
+        clenchStart = null
+        clenchTaint = null
         turnSinceS = -1.0
-        turnFired = false
+        headAngle.fill(0.0)
+        awaySign.fill(0)
         lobes.clear()
         lobe = null
         halfStartS = -1.0
@@ -183,7 +190,7 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         lastMotionS = -1e9
     }
 
-    private fun step(frame: EegFrame, s: Int, out: MutableList<ControlEvent>) {
+    private fun step(frame: EegFrame, s: Int, out: MutableList<GestureEvent>) {
         val nowS = clock / fs
 
         for (c in 0 until EEG_CHANNELS) {
@@ -270,71 +277,127 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
     // ---- CLENCH: broadband 30-100 Hz power on all channels, held for a while, head still, no blink nearby
 
     private var clenchSinceS = -1.0
-    private var clenchFired = false
-    private var clenchTainted = false
+    private var clenchStart: GestureStart? = null
+    private var clenchTaint: CancelReason? = null
     private var lastBigFrontalS = -1e9
 
-    private fun updateClench(nowS: Double, ratio: Double, okCount: Int, gyroSmooth: Double?, out: MutableList<ControlEvent>) {
+    // A taint before the start means no events at all. After the start it cancels the hold: the 30-100 Hz power
+    // from the movement or blink hides when the jaw actually let go, so any duration reported would be made up.
+    private fun updateClench(nowS: Double, ratio: Double, okCount: Int, gyroSmooth: Double?, out: MutableList<GestureEvent>) {
         val usable = nowS >= warmUntilS && okCount >= MIN_CLENCH_CHANNELS
         if (usable && ratio > cfg.clenchOnRatio) {
             if (clenchSinceS < 0) {
                 clenchSinceS = nowS
-                clenchTainted = false
+                clenchTaint = null
             }
-            // Blinks and eye closure leak into 30-100 Hz too; the big frontal low-frequency swing gives them away.
-            val headMoving = gyroSmooth != null && gyroSmooth > cfg.clenchMaxGyroDps
-            if (headMoving || nowS - lastBigFrontalS < cfg.frontalVetoS) clenchTainted = true
-            if (!clenchFired && !clenchTainted && nowS - clenchSinceS >= cfg.clenchMinS) {
-                clenchFired = true
+            checkClenchTaint(nowS, gyroSmooth, out)
+            if (clenchStart == null && clenchTaint == null && nowS - clenchSinceS >= cfg.clenchMinS) {
                 val conf = scaled(ratio, cfg.clenchOnRatio, 4 * cfg.clenchOnRatio) * okCount / EEG_CHANNELS
-                out += event(ControlType.CLENCH, conf, nowS)
+                val start = GestureStart(GestureType.CLENCH, ms(nowS), confidence(conf), ms(clenchSinceS))
+                clenchStart = start
+                out += start
             }
         } else if (!usable || ratio < cfg.clenchOffRatio) {
+            clenchStart?.let {
+                out += if (usable) {
+                    GestureEnd(GestureType.CLENCH, ms(nowS), it.confidence, ms(nowS) - it.onsetMs)
+                } else {
+                    GestureCancel(GestureType.CLENCH, ms(nowS), it.confidence, CancelReason.SIGNAL_LOST)
+                }
+            }
             clenchSinceS = -1.0
-            clenchFired = false
+            clenchStart = null
+        } else if (clenchStart != null) {
+            // A held clench stays watched while it dips between the two thresholds.
+            checkClenchTaint(nowS, gyroSmooth, out)
         }
     }
 
-    // ---- HEAD TURN: gyro magnitude well above what facial movements produce; the dominant axis gives direction
+    private fun checkClenchTaint(nowS: Double, gyroSmooth: Double?, out: MutableList<GestureEvent>) {
+        if (clenchTaint != null) return
+        // Blinks and eye closure leak into 30-100 Hz too; the big frontal low-frequency swing gives them away.
+        val reason = when {
+            gyroSmooth != null && gyroSmooth > cfg.clenchMaxGyroDps -> CancelReason.HEAD_MOTION
+            nowS - lastBigFrontalS < cfg.frontalVetoS -> CancelReason.BLINK
+            else -> return
+        }
+        clenchTaint = reason
+        clenchStart?.let { out += GestureCancel(GestureType.CLENCH, ms(nowS), it.confidence, reason) }
+        clenchStart = null
+    }
+
+    // ---- HEAD TURN: gyro magnitude well above what facial movements produce; the dominant axis gives direction.
+    // The integrated angle says which side of the rest pose the head is on, so the way back is not a new turn,
+    // while a swing that carries on past the rest pose is (obrot-glowa-* swing side to side without stopping).
 
     private var turnSinceS = -1.0
-    private var turnFired = false
     private var turnPeak = 0.0
     private var lastTurnS = -1e9
     private val axisEnergy = DoubleArray(3)
+    private val axisSum = DoubleArray(3)
+    private val headAngle = DoubleArray(3)
+    private val awaySign = IntArray(3)
+    private val awayPeak = DoubleArray(3)
+    private val awaySinceS = DoubleArray(3)
 
-    private fun updateTurn(nowS: Double, gx: Double, gy: Double, gz: Double, g: Double, out: MutableList<ControlEvent>) {
+    private fun updateTurn(nowS: Double, gx: Double, gy: Double, gz: Double, g: Double, out: MutableList<GestureEvent>) {
+        headAngle[0] += gx / fs
+        headAngle[1] += gy / fs
+        headAngle[2] += gz / fs
         if (g > cfg.turnGyroDps) {
             lastTurnS = nowS
             if (turnSinceS < 0) {
                 turnSinceS = nowS
                 axisEnergy.fill(0.0)
+                axisSum.fill(0.0)
                 turnPeak = 0.0
+                // Where the head rested when it started moving is the pose a turn is measured from.
+                for (a in TURN_AXES) if (awaySign[a] == 0) headAngle[a] = 0.0
             }
             axisEnergy[0] += gx * gx
             axisEnergy[1] += gy * gy
             axisEnergy[2] += gz * gz
+            axisSum[0] += gx
+            axisSum[1] += gy
+            axisSum[2] += gz
             turnPeak = max(turnPeak, g)
-            if (!turnFired && nowS - turnSinceS >= cfg.turnMinS) {
-                turnFired = true
-                val dominant = axisEnergy.indices.maxBy { axisEnergy[it] }
-                val type = when (dominant) {
-                    1 -> ControlType.HEAD_TURN_HORIZONTAL
-                    2 -> ControlType.HEAD_TURN_VERTICAL
-                    else -> null // x dominant is a sideways tilt, which v1 does not report
-                }
-                if (type != null) {
+            val dominant = when {
+                axisEnergy[0] >= axisEnergy[1] && axisEnergy[0] >= axisEnergy[2] -> 0
+                axisEnergy[1] >= axisEnergy[2] -> AXIS_YAW
+                else -> AXIS_PITCH
+            }
+            // x dominant is a sideways tilt, which is not reported
+            if (dominant in TURN_AXES && nowS - turnSinceS >= cfg.turnMinS) {
+                val sign = if (axisSum[dominant] > 0) 1 else -1
+                if (sign != awaySign[dominant] && headAngle[dominant] * sign >= cfg.turnMinDeg) {
+                    awaySign[dominant] = sign
+                    awayPeak[dominant] = headAngle[dominant] * sign
+                    awaySinceS[dominant] = nowS
                     val share = axisEnergy[dominant] / axisEnergy.sum()
                     val purity = ((share - 1.0 / 3) / (2.0 / 3)).coerceIn(0.0, 1.0)
                     val conf = scaled(turnPeak, cfg.turnGyroDps, 4 * cfg.turnGyroDps) * (0.5 + 0.5 * purity)
-                    out += event(type, conf, nowS)
+                    out += instant(turnType(dominant, sign), conf, nowS)
                 }
             }
         } else if (g < cfg.turnGyroDps * cfg.turnReleaseFraction) {
             turnSinceS = -1.0
-            turnFired = false
+        }
+        for (a in TURN_AXES) {
+            val sign = awaySign[a]
+            if (sign == 0) continue
+            val away = headAngle[a] * sign
+            awayPeak[a] = max(awayPeak[a], away)
+            // Half way back is enough: returns rarely land exactly on the old pose.
+            if (away < max(cfg.turnMinDeg / 2, awayPeak[a] / 2) || nowS - awaySinceS[a] > cfg.turnReturnMaxS) awaySign[a] = 0
         }
     }
+
+    private fun turnType(axis: Int, sign: Int): GestureType =
+        if (axis == AXIS_YAW) {
+            if ((sign > 0) == cfg.turnLeftIsPositiveY) GestureType.TURN_LEFT else GestureType.TURN_RIGHT
+        } else {
+            if ((sign > 0) == cfg.turnUpIsPositiveZ) GestureType.TURN_UP else GestureType.TURN_DOWN
+        }
 
     // ---- EYELIDS (gyro): a forceful blink jerks the headband about z, down when the lids close and up when they open.
     // Closed time tells a blink from a long blink; two short blinks in a row make a double blink.
@@ -343,7 +406,7 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         var openPeak = 0.0
     }
 
-    private class LidEvent(val type: ControlType, val first: Blink, val last: Blink, val decideS: Double)
+    private class LidEvent(val type: GestureType, val first: Blink, val last: Blink, val decideS: Double)
 
     private var closeArmed = true
     private var openArmed = true
@@ -354,7 +417,7 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
     private var lidPending: LidEvent? = null
     private var lastMotionS = -1e9
 
-    private fun updateLids(nowS: Double, gz: Double, g: Double, out: MutableList<ControlEvent>) {
+    private fun updateLids(nowS: Double, gz: Double, g: Double, out: MutableList<GestureEvent>) {
         val kick = cfg.lidKickDps
         if (g > cfg.lidMotionDps) lastMotionS = nowS
 
@@ -386,10 +449,10 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         lidPending = null
         if (lastMotionS >= p.first.startS - cfg.lidMotionGuardS) return
         val peak = when (p.type) {
-            ControlType.LONG_BLINK -> min(p.last.closePeak, p.last.openPeak)
+            GestureType.LONG_BLINK -> min(p.last.closePeak, p.last.openPeak)
             else -> min(p.first.openPeak, p.last.openPeak)
         }
-        out += event(p.type, scaled(peak, kick, 4 * kick), nowS)
+        out += instant(p.type, scaled(peak, kick, 4 * kick), nowS)
     }
 
     private fun onLidsOpen(nowS: Double) {
@@ -401,12 +464,12 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         val prev = shortBlink
         when {
             closed >= cfg.lidLongMinS -> {
-                lidPending = LidEvent(ControlType.LONG_BLINK, blink, blink, decideS)
+                lidPending = LidEvent(GestureType.LONG_BLINK, blink, blink, decideS)
                 shortBlink = null
             }
             // Greedy pairing: ses-001 pairs sat 0.28 s apart but only 0.4 s from the next pair, so no third-blink veto.
             prev != null && nowS - prev.openS in cfg.lidDoubleMinGapS..cfg.lidDoubleMaxGapS -> {
-                lidPending = LidEvent(ControlType.DOUBLE_BLINK, prev, blink, decideS)
+                lidPending = LidEvent(GestureType.DOUBLE_BLINK, prev, blink, decideS)
                 shortBlink = null
             }
             else -> shortBlink = blink
@@ -428,7 +491,7 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
     private var pendingA: Lobe? = null
     private var pendingB: Lobe? = null
 
-    private fun updateDoubleBlink(nowS: Double, frontal: Double, envelope: Double, frontalOk: Int, out: MutableList<ControlEvent>) {
+    private fun updateDoubleBlink(nowS: Double, frontal: Double, envelope: Double, frontalOk: Int, out: MutableList<GestureEvent>) {
         val level = cfg.blinkLobeUv
         if (frontal < -level / 2) {
             if (halfStartS < 0) halfStartS = nowS
@@ -488,7 +551,7 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
                     val gap = b.peakS - a.peakS
                     val timing = 1 - 0.5 * (abs(gap - IDEAL_BLINK_GAP_S) / IDEAL_BLINK_GAP_S).coerceIn(0.0, 1.0)
                     val q = if (frontalOk == 2) 1.0 else 0.75
-                    out += event(ControlType.DOUBLE_BLINK, scaled(minPeak, level, 5 * level) * timing * q, nowS)
+                    out += instant(GestureType.DOUBLE_BLINK, scaled(minPeak, level, 5 * level) * timing * q, nowS)
                 }
                 finishPair(a, b)
             }
@@ -503,13 +566,16 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         pendingB = null
     }
 
-    private fun event(type: ControlType, confidence: Double, nowS: Double) =
-        ControlEvent(type, confidence.coerceIn(0.0, 1.0).toFloat(), (nowS * 1000).toLong())
+    private fun instant(type: GestureType, score: Double, nowS: Double) =
+        GestureInstant(type, ms(nowS), confidence(score))
 
     private fun samples(seconds: Double) = max(1, (seconds * fs).roundToInt())
 
     private companion object {
         val FRONTAL = intArrayOf(CH_FP2, CH_FP1)
+        const val AXIS_YAW = 1
+        const val AXIS_PITCH = 2
+        val TURN_AXES = intArrayOf(AXIS_YAW, AXIS_PITCH)
         const val MIN_BASELINE_POINTS = 5
         const val MIN_BASELINE_UV = 0.5
         const val MIN_CLENCH_CHANNELS = 2
@@ -517,6 +583,10 @@ class Detector(val sampleRate: Int = 250, private val cfg: DetectorConfig = Dete
         const val TURN_GUARD_S = 0.2
         const val IDEAL_BLINK_GAP_S = 0.3
         const val CONF_FLOOR = 0.4
+
+        fun ms(seconds: Double) = (seconds * 1000).toLong()
+
+        fun confidence(value: Double) = value.coerceIn(0.0, 1.0).toFloat()
 
         // Just over the threshold gives CONF_FLOOR, reaching `saturation` gives 1.
         fun scaled(value: Double, threshold: Double, saturation: Double): Double {

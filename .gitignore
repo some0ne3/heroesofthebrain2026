@@ -8,3 +8,5 @@ local.properties
 __pycache__/
 .ipynb_checkpoints/
 result
+.DS_Store
+

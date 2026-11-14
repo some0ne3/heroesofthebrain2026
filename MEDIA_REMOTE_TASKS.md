@@ -60,23 +60,23 @@ Done when: a new user can calibrate, sees their hit rates, and the detector runs
 
 ## 5. Binding model and rule engine
 
-- [ ] Data model: `Profile { bindings, globalSettings }` and `Binding { trigger, conditions, action, timing }`.
-- [ ] Trigger types:
+- [x] Data model: `Profile { bindings, globalSettings }` and `Binding { trigger, conditions, action, timing }`.
+- [x] Trigger types:
   - single gesture
   - hold with minimum and maximum duration
   - repeat count with a maximum gap between repeats
   - sequence: gesture A, then gesture B within a time window
-- [ ] Action types:
+- [x] Action types:
   - one media command
   - repeat a command at an interval while the gesture is held
   - a macro: several commands in order, with delays between them
-- [ ] Timing per binding: delay before, cooldown after, and a cancel window (the action waits and a cancel gesture aborts it).
-- [ ] Conditions per binding: only when armed; only when media is playing or paused; only when the channels the gesture needs have good contact.
-- [ ] Global settings: arm/disarm gesture, auto-disarm after inactivity, a global cooldown, a minimum confidence.
-- [ ] Engine: a state machine that turns the gesture stream plus a clock into actions. Write it in plain Kotlin with no Android dependencies, so it can be unit-tested.
-- [ ] Ambiguity: when the start of a gesture matches several bindings (short clench vs. long clench, single gesture vs. sequence), the engine waits until only one can match. Report the extra wait to the editor.
-- [ ] Persistence: store profiles as JSON (kotlinx.serialization or DataStore). Add profile import and export.
-- [ ] Tests: the engine on synthetic gesture streams, and end to end from replay CSVs to actions.
+- [x] Timing per binding: delay before, cooldown after, and a cancel window (the action waits and a cancel gesture aborts it).
+- [x] Conditions per binding: only when armed; only when media is playing or paused; only when the channels the gesture needs have good contact.
+- [x] Global settings: arm/disarm gesture, auto-disarm after inactivity, a global cooldown, a minimum confidence.
+- [x] Engine: a state machine that turns the gesture stream plus a clock into actions. Write it in plain Kotlin with no Android dependencies, so it can be unit-tested.
+- [x] Ambiguity: when the start of a gesture matches several bindings (short clench vs. long clench, single gesture vs. sequence), the engine waits until only one can match. Report the extra wait to the editor.
+- [x] Persistence: store profiles as JSON (kotlinx.serialization or DataStore). Add profile import and export.
+- [x] Tests: the engine on synthetic gesture streams, and end to end from replay CSVs to actions.
 
 Done when: a profile loaded from JSON turns replayed recordings into the expected actions in tests.
 

@@ -1,11 +1,9 @@
 package com.heroesofthebrain.halo.ui
 
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,9 +55,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.heroesofthebrain.halo.detect.ControlType
+import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.eeg.SourceStatus
-import com.neurotec.brainaccess.transport.BlePermissions
+import com.heroesofthebrain.halo.service.ActionBlock
+import com.heroesofthebrain.halo.ui.calibration.CalibrationRoute
+import com.heroesofthebrain.halo.ui.calibration.PracticeRoute
+import com.heroesofthebrain.halo.ui.calibration.formatDate
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,22 +71,24 @@ private val Amber = Color(0xFFFFB300)
 private val Red = Color(0xFFE53935)
 private val Grey = Color(0xFF9E9E9E)
 
-fun ControlType.color(): Color = when (this) {
-    ControlType.CLENCH -> Color(0xFFFF8F00)
-    ControlType.HEAD_TURN_HORIZONTAL -> Color(0xFF1E88E5)
-    ControlType.HEAD_TURN_VERTICAL -> Color(0xFF8E24AA)
-    ControlType.DOUBLE_BLINK -> Color(0xFF00897B)
-    ControlType.LONG_BLINK -> Color(0xFF6D4C41)
-    ControlType.NONE -> Grey
+fun GestureType?.color(): Color = when (this) {
+    GestureType.CLENCH -> Color(0xFFFF8F00)
+    GestureType.TURN_LEFT, GestureType.TURN_RIGHT -> Color(0xFF1E88E5)
+    GestureType.TURN_UP, GestureType.TURN_DOWN -> Color(0xFF8E24AA)
+    GestureType.DOUBLE_BLINK -> Color(0xFF00897B)
+    GestureType.LONG_BLINK -> Color(0xFF6D4C41)
+    null -> Grey
 }
 
-fun ControlType.title(): String = when (this) {
-    ControlType.CLENCH -> "CLENCH"
-    ControlType.HEAD_TURN_HORIZONTAL -> "HEAD TURN ↔"
-    ControlType.HEAD_TURN_VERTICAL -> "HEAD TURN ↕"
-    ControlType.DOUBLE_BLINK -> "DOUBLE BLINK"
-    ControlType.LONG_BLINK -> "LONG BLINK"
-    ControlType.NONE -> "NONE"
+fun GestureType?.title(): String = when (this) {
+    GestureType.CLENCH -> "CLENCH"
+    GestureType.TURN_LEFT -> "TURN ←"
+    GestureType.TURN_RIGHT -> "TURN →"
+    GestureType.TURN_UP -> "TURN ↑"
+    GestureType.TURN_DOWN -> "TURN ↓"
+    GestureType.DOUBLE_BLINK -> "DOUBLE BLINK"
+    GestureType.LONG_BLINK -> "LONG BLINK"
+    null -> "NONE"
 }
 
 private fun SourceStatus.text(): String = when (this) {
@@ -104,29 +109,73 @@ private fun SourceStatus.color(): Color = when (this) {
     SourceStatus.Idle, SourceStatus.Finished -> Grey
 }
 
+private fun ActionBlock?.text(): String = when (this) {
+    null -> "Actions allowed"
+    ActionBlock.NOT_RUNNING -> "Actions off: not running"
+    ActionBlock.RECONNECTING -> "Actions paused until the headset is back"
+    ActionBlock.NOT_CONNECTED -> "Actions off: waiting for the headset"
+    ActionBlock.DISARMED -> "Actions off: disarmed"
+}
+
+// Permission requests and the battery settings screen are launched by MainActivity, which owns their order.
 @Composable
-fun MainScreen(vm: MainViewModel) {
+fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -> Unit) {
     val state by vm.ui.collectAsStateWithLifecycle()
     val trace by vm.trace.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val running = state.pipeline.running
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        vm.onPermissionResult(result.values.all { it })
-    }
-    val onStart = {
-        if (state.sourceKind == SourceKind.DEVICE) {
-            // BlePermissions.required is the SDK's list for the running OS: SCAN+CONNECT on 31+, fine location on 30-.
-            val missing = BlePermissions.required.filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (missing.isEmpty()) vm.start() else permissionLauncher.launch(missing.toTypedArray())
-        } else {
-            vm.start()
+    when (state.activeScreen) {
+        ActiveScreen.CALIBRATION -> {
+            BackHandler { vm.closeChildScreen() }
+            CalibrationRoute(
+                frames = vm.frames,
+                store = vm.store,
+                profile = vm.activeProfile(),
+                onFinished = vm::onCalibrationFinished,
+                modifier = Modifier.fillMaxSize(),
+            )
+            return
         }
+        ActiveScreen.PRACTICE -> {
+            BackHandler { vm.closeChildScreen() }
+            PracticeRoute(
+                events = vm.events,
+                onClose = vm::closeChildScreen,
+                modifier = Modifier.fillMaxSize(),
+            )
+            return
+        }
+        ActiveScreen.MAIN -> Unit
     }
 
+    // The service keeps the remote alive with the screen off; keeping it on is only for watching the trace.
     val view = LocalView.current
-    DisposableEffect(state.running) {
-        view.keepScreenOn = state.running
+    val watchingTrace = running && state.debugExpanded
+    DisposableEffect(watchingTrace) {
+        view.keepScreenOn = watchingTrace
         onDispose { view.keepScreenOn = false }
+    }
+
+    state.recalibrationOffer?.let { offer ->
+        RecalibrationDialog(
+            lastCalibratedAtMs = offer.lastCalibratedAtMs,
+            onCalibrate = {
+                if (!running) onConnect()
+                vm.openCalibration()
+            },
+            onDismiss = vm::dismissRecalibration,
+        )
+    }
+
+    if (state.showBatteryDialog) {
+        BatteryDialog(
+            onContinue = {
+                vm.dismissBatteryDialog()
+                onAllowBackground()
+            },
+            onDismiss = vm::dismissBatteryDialog,
+        )
     }
 
     Scaffold { padding ->
@@ -142,10 +191,10 @@ fun MainScreen(vm: MainViewModel) {
             LabelPanel(state.label, state.confidence)
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state.running) {
+                if (running) {
                     OutlinedButton(onClick = vm::stop) { Text("Stop") }
                 } else {
-                    Button(onClick = onStart) { Text(if (state.sourceKind == SourceKind.DEVICE) "Connect" else "Play replay") }
+                    Button(onClick = onConnect) { Text(if (state.sourceKind == SourceKind.DEVICE) "Connect" else "Play replay") }
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -153,6 +202,24 @@ fun MainScreen(vm: MainViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = {
+                    if (!running) onConnect()
+                    vm.openCalibration()
+                }) {
+                    Text("Calibrate")
+                }
+                OutlinedButton(onClick = {
+                    if (!running) onConnect()
+                    vm.openPractice()
+                }) {
+                    Text("Practice")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            ArmRow(state, onArmed = vm::setArmed)
+            if (!state.batteryExempt) BatteryRow(onFix = onAllowBackground)
             if (state.permissionDenied) {
                 Spacer(Modifier.height(8.dp))
                 PermissionCard(onOpenSettings = {
@@ -172,21 +239,22 @@ fun MainScreen(vm: MainViewModel) {
 
 @Composable
 private fun StatusRow(state: UiState) {
+    val p = state.pipeline
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Dot(state.status.color())
+            Dot(p.status.color())
             Spacer(Modifier.width(6.dp))
-            Text(state.status.text(), style = MaterialTheme.typography.bodyMedium, maxLines = 2, modifier = Modifier.weight(1f))
+            Text(p.status.text(), style = MaterialTheme.typography.bodyMedium, maxLines = 2, modifier = Modifier.weight(1f))
             Text(
-                text = "Battery " + (state.batteryPct?.let { "${it.roundToInt()}%" } ?: "–"),
+                text = "Battery " + (p.batteryPct?.let { "${it.roundToInt()}%" } ?: "–"),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            state.channels.forEach { ch ->
+            p.channels.forEach { ch ->
                 val color = when {
-                    !state.running -> Grey
+                    !p.running -> Grey
                     !ch.contact -> Red
                     !ch.signalOk -> Amber
                     else -> Green
@@ -216,7 +284,7 @@ private fun Dot(color: Color) {
 }
 
 @Composable
-private fun LabelPanel(label: ControlType, confidence: Float) {
+private fun LabelPanel(label: GestureType?, confidence: Float) {
     Card(
         colors = CardDefaults.cardColors(containerColor = label.color().copy(alpha = 0.15f)),
         shape = RoundedCornerShape(16.dp),
@@ -230,7 +298,7 @@ private fun LabelPanel(label: ControlType, confidence: Float) {
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
-            if (label == ControlType.DOUBLE_BLINK || label == ControlType.LONG_BLINK) {
+            if (label == GestureType.DOUBLE_BLINK || label == GestureType.LONG_BLINK) {
                 Text("experimental", color = label.color(), style = MaterialTheme.typography.labelLarge)
             }
             Spacer(Modifier.height(10.dp))
@@ -257,6 +325,72 @@ private fun LabelPanel(label: ControlType, confidence: Float) {
             )
         }
     }
+}
+
+@Composable
+private fun ArmRow(state: UiState, onArmed: (Boolean) -> Unit) {
+    val p = state.pipeline
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Switch(checked = p.armed, onCheckedChange = onArmed, enabled = p.running)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(if (p.armed) "Armed" else "Disarmed", style = MaterialTheme.typography.bodyMedium)
+            Text(p.actionBlock.text(), style = MaterialTheme.typography.labelSmall, color = if (p.actionsAllowed) Green else Grey)
+        }
+    }
+}
+
+@Composable
+private fun BatteryRow(onFix: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Dot(Amber)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Battery optimisation is on, so Android may stop the remote while the screen is off.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onFix) { Text("Fix") }
+    }
+}
+
+@Composable
+private fun RecalibrationDialog(
+    lastCalibratedAtMs: Long?,
+    onCalibrate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Recalibrate headset?") },
+        text = {
+            val last = if (lastCalibratedAtMs != null) " Last calibrated: ${formatDate(lastCalibratedAtMs)}." else ""
+            Text(
+                "The headset was just put on or reconnected. Electrode contact changes with every fitting.$last " +
+                    "Would you like to recalibrate your gestures now?",
+            )
+        },
+        confirmButton = { Button(onClick = onCalibrate) { Text("Recalibrate") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
+}
+
+@Composable
+private fun BatteryDialog(onContinue: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Keep the remote running") },
+        text = {
+            Text(
+                "HALO Control reads the headset all the time so your gestures keep working with the screen off. " +
+                    "Battery optimisation can pause the app or drop the Bluetooth link once the phone is in your pocket. " +
+                    "On the next screen, allow HALO Control to ignore battery optimisation. " +
+                    "The app only stays active while its notification is showing, and Stop ends it.",
+            )
+        },
+        confirmButton = { TextButton(onClick = onContinue) { Text("Continue") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
 }
 
 @Composable
@@ -293,7 +427,7 @@ private fun EventLog(log: List<LogEntry>, modifier: Modifier) {
                 Spacer(Modifier.width(8.dp))
                 Dot(e.type.color())
                 Spacer(Modifier.width(4.dp))
-                Text(e.type.title(), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(e.text, fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Text("${(e.confidence * 100).roundToInt()} %", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             }
         }
@@ -334,11 +468,12 @@ private fun DebugPanel(state: UiState, trace: List<FloatArray>, vm: MainViewMode
                     .fillMaxWidth()
                     .height(260.dp),
             )
+            val p = state.pipeline
             Text(
                 "EEG 1-20 Hz per channel (auto-scaled, last 5 s), gyro magnitude with 20 and 50 °/s lines. " +
-                    "30-100 Hz ratio to baseline: %.1f (clench above 3.0). ".format(Locale.US, state.clenchRatio) +
-                    "Missed samples: ${state.missedSamples}." +
-                    if (state.hasGyro == false) " This headset has no gyroscope, so head turns are off." else "",
+                    "30-100 Hz ratio to baseline: %.1f (clench above 3.0). ".format(Locale.US, p.clenchRatio) +
+                    "Missed samples: ${p.missedSamples}." +
+                    if (p.hasGyro == false) " This headset has no gyroscope, so head turns are off." else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = Grey,
             )
