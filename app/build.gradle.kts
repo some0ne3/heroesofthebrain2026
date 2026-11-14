@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 plugins {
     id("com.android.application")
@@ -19,6 +22,37 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("halo-release.jks")
+            storePassword = "haloremote2026"
+            keyAlias = "halo"
+            keyPassword = "haloremote2026"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    applicationVariants.all {
+        val variantName = name
+        outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            output?.outputFileName = "halo-${variantName}-${timestamp}.apk"
+        }
     }
 
     buildFeatures {
