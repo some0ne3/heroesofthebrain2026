@@ -1,0 +1,9 @@
+.direnv/
+recordings/
+*.xdf
+.gradle/
+build/
+local.properties
+__pycache__/
+.ipynb_checkpoints/
+result
