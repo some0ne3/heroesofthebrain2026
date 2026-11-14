@@ -9,9 +9,10 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
 import android.view.KeyEvent
+import com.heroesofthebrain.halo.input.AccessibilityInputPlatform
 
 fun AndroidMediaOutput(context: Context, showVolumeUi: Boolean = true): MediaOutput =
-    PlatformMediaOutput(AndroidMediaPlatform(context, showVolumeUi))
+    PlatformMediaOutput(AndroidMediaPlatform(context, showVolumeUi), AccessibilityInputPlatform)
 
 class AndroidMediaPlatform(context: Context, private val showVolumeUi: Boolean = true) : MediaPlatform {
 

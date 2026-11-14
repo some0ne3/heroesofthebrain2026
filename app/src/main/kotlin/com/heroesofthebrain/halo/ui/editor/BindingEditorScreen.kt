@@ -56,8 +56,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.heroesofthebrain.halo.calibration.HoldStats
 import com.heroesofthebrain.halo.detect.GestureType
+import com.heroesofthebrain.halo.input.HaloInputService
+import com.heroesofthebrain.halo.input.SWIPE_DURATION_MS
 import com.heroesofthebrain.halo.media.MediaCommand
 import com.heroesofthebrain.halo.media.describe
+import com.heroesofthebrain.halo.media.needsInputService
+import com.heroesofthebrain.halo.media.sameKindAs
 import com.heroesofthebrain.halo.rules.AmbiguityResolver
 import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.BindingConditions
@@ -75,7 +79,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.SliderDefaults
+import android.os.Build
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 private val Green = FreehandColors.Success
@@ -167,7 +175,7 @@ fun BindingEditorScreen(
     }
 
     var repeatCommand by remember(initialBinding.id) {
-        mutableStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.command ?: MediaCommand.VolumeUp)
+        mutableStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.command ?: MediaCommand.VolumeUp())
     }
     var repeatIntervalMs by remember(initialBinding.id) {
         mutableLongStateOf((initialBinding.action as? RuleAction.RepeatWhileHeld)?.intervalMs ?: 350L)
@@ -182,7 +190,7 @@ fun BindingEditorScreen(
             if (!steps.isNullOrEmpty()) addAll(steps) else addAll(
                 listOf(
                     MacroStep(MediaCommand.Next, 200L),
-                    MacroStep(MediaCommand.VolumeUp, 0L),
+                    MacroStep(MediaCommand.VolumeUp(), 0L),
                 ),
             )
         }
@@ -1040,7 +1048,7 @@ private fun SingleCommandEditor(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text("Select Media Command", style = MaterialTheme.typography.labelSmall, color = Grey)
+            Text("Select Command", style = MaterialTheme.typography.labelSmall, color = Grey)
             Spacer(Modifier.height(8.dp))
             CommandDropdown(selected = command, onSelect = onCommandChange)
         }
@@ -1068,17 +1076,116 @@ private fun CommandDropdown(
             modifier = Modifier.fillMaxWidth(0.85f),
         ) {
             MediaCommand.all.forEach { cmd ->
+                // Re-picking the current kind keeps the amount the user already set.
+                val option = if (cmd.sameKindAs(selected)) selected else cmd
                 DropdownMenuItem(
-                    text = { Text(cmd.describe()) },
+                    text = { Text(option.describe()) },
                     onClick = {
                         expanded = false
-                        onSelect(cmd)
+                        onSelect(option)
                     },
                 )
             }
         }
     }
+    CommandAmountSlider(selected, onSelect)
+    InputServiceHint(selected)
 }
+
+@Composable
+private fun CommandAmountSlider(
+    command: MediaCommand,
+    onChange: (MediaCommand) -> Unit,
+) {
+    when (command) {
+        is MediaCommand.VolumeUp -> AmountSlider("Volume steps: ${command.steps}", command.steps, MediaCommand.VOLUME_STEPS_RANGE) {
+            onChange(MediaCommand.VolumeUp(it))
+        }
+        is MediaCommand.VolumeDown -> AmountSlider("Volume steps: ${command.steps}", command.steps, MediaCommand.VOLUME_STEPS_RANGE) {
+            onChange(MediaCommand.VolumeDown(it))
+        }
+        is MediaCommand.ScrollDown -> AmountSlider(scrollLabel(command.distancePercent), command.distancePercent, MediaCommand.SCROLL_PERCENT_RANGE, increment = 5) {
+            onChange(MediaCommand.ScrollDown(it))
+        }
+        is MediaCommand.ScrollUp -> AmountSlider(scrollLabel(command.distancePercent), command.distancePercent, MediaCommand.SCROLL_PERCENT_RANGE, increment = 5) {
+            onChange(MediaCommand.ScrollUp(it))
+        }
+        is MediaCommand.SeekForward -> AmountSlider(seekLabel(command.amountMs), seekSeconds(command.amountMs), SEEK_SECONDS_RANGE, increment = 5) {
+            onChange(MediaCommand.SeekForward(it * 1000L))
+        }
+        is MediaCommand.SeekBack -> AmountSlider(seekLabel(command.amountMs), seekSeconds(command.amountMs), SEEK_SECONDS_RANGE, increment = 5) {
+            onChange(MediaCommand.SeekBack(it * 1000L))
+        }
+        else -> Unit
+    }
+}
+
+private val SEEK_SECONDS_RANGE = 5..60
+
+private fun scrollLabel(percent: Int) = "Scroll distance: $percent% of the screen"
+
+private fun seekLabel(ms: Long) = "Seek by: " + if (ms % 1000 == 0L) "${ms / 1000} s" else "${ms / 1000.0} s"
+
+// Seek amounts set outside the editor (2.5 s, 90 s) still show on the slider, at its nearest end.
+private fun seekSeconds(ms: Long) = (ms / 1000).toInt().coerceIn(SEEK_SECONDS_RANGE)
+
+@Composable
+private fun AmountSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    increment: Int = 1,
+    onChange: (Int) -> Unit,
+) {
+    Spacer(Modifier.height(10.dp))
+    Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+    Slider(
+        value = value.toFloat(),
+        onValueChange = { raw ->
+            val snapped = (range.first + ((raw - range.first) / increment).roundToInt() * increment).coerceIn(range)
+            if (snapped != value) onChange(snapped)
+        },
+        valueRange = range.first.toFloat()..range.last.toFloat(),
+        steps = ((range.last - range.first) / increment - 1).coerceAtLeast(0),
+    )
+}
+
+@Composable
+private fun InputServiceHint(command: MediaCommand) {
+    if (!command.needsInputService) return
+    val context = LocalContext.current
+    val running by HaloInputService.running.collectAsState()
+    val arrowsUnsupported = command.isArrowKey && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+    if (running && !arrowsUnsupported) return
+
+    Spacer(Modifier.height(8.dp))
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = Amber.copy(alpha = 0.15f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(8.dp)) {
+            Text(
+                text = if (arrowsUnsupported) {
+                    "Arrow keys need Android 13 or newer. Use scroll instead."
+                } else {
+                    "Scrolling and arrow keys need the Freehand accessibility service. It only sends swipes and keys, it cannot see the screen."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = Amber,
+            )
+            if (!arrowsUnsupported) {
+                TextButton(onClick = { HaloInputService.openSettings(context) }) {
+                    Text("Turn on in Accessibility settings", color = Amber, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+private val MediaCommand.isArrowKey: Boolean
+    get() = this == MediaCommand.ArrowUp || this == MediaCommand.ArrowDown ||
+        this == MediaCommand.ArrowLeft || this == MediaCommand.ArrowRight
 
 @Composable
 private fun RepeatActionEditor(
@@ -1124,6 +1231,22 @@ private fun RepeatActionEditor(
                 }
             }
 
+            val scrolling = command is MediaCommand.ScrollDown || command is MediaCommand.ScrollUp
+            if (scrolling && intervalMs <= SWIPE_DURATION_MS) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = Amber.copy(alpha = 0.15f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = "Each swipe takes $SWIPE_DURATION_MS ms. At this interval the next swipe can cut the previous one off before it finishes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Amber,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+            }
+
             Spacer(Modifier.height(10.dp))
             Text("Initial Delay: ${initialDelayMs} ms", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
             Slider(
@@ -1158,7 +1281,7 @@ private fun MacroActionEditor(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f).padding(end = 12.dp),
                 )
-                AddPillButton("Add Step", onClick = { steps.add(MacroStep(MediaCommand.VolumeUp, 150L)) })
+                AddPillButton("Add Step", onClick = { steps.add(MacroStep(MediaCommand.VolumeUp(), 150L)) })
             }
 
             Spacer(Modifier.height(10.dp))

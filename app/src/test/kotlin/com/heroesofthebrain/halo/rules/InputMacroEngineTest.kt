@@ -22,7 +22,7 @@ class InputMacroEngineTest {
     private val previous = single("left", TURN_LEFT, MediaCommand.Previous)
     private val blinkThenRight = macro(
         "blink-right",
-        MediaCommand.VolumeUp,
+        MediaCommand.VolumeUp(),
         InputStep(DOUBLE_BLINK),
         InputStep(TURN_RIGHT, withinMs = 3000L),
     )
@@ -81,7 +81,7 @@ class InputMacroEngineTest {
         val engine = engine(playPause, next, blinkThenRight)
 
         assertEquals(emptyList<MediaCommand>(), engine.instant(DOUBLE_BLINK, 1000L))
-        assertEquals(listOf(MediaCommand.VolumeUp), engine.instant(TURN_RIGHT, 3500L))
+        assertEquals(listOf(MediaCommand.VolumeUp()), engine.instant(TURN_RIGHT, 3500L))
         assertEquals(emptyList<MediaCommand>(), engine.at(10_000L))
     }
 
@@ -167,11 +167,11 @@ class InputMacroEngineTest {
     fun `a clench step counts when held within its range and keeps the clench bindings quiet`() {
         val blinkThenClench = macro(
             "blink-clench",
-            MediaCommand.VolumeDown,
+            MediaCommand.VolumeDown(),
             InputStep(DOUBLE_BLINK),
             InputStep(CLENCH, withinMs = 3000L, minHoldMs = 500L, maxHoldMs = 1500L),
         )
-        val clenchVolume = hold("clench", 500L, 1200L, MediaCommand.VolumeUp)
+        val clenchVolume = hold("clench", 500L, 1200L, MediaCommand.VolumeUp())
         val clenchRepeat = Binding(
             id = "clench-repeat",
             trigger = Trigger.Hold(CLENCH, minDurationMs = 300L),
@@ -182,14 +182,14 @@ class InputMacroEngineTest {
         engine.instant(DOUBLE_BLINK, 1000L)
         engine.clenchStart(2000L)
         assertEquals(emptyList<MediaCommand>(), engine.at(2600L))
-        assertEquals(listOf(MediaCommand.VolumeDown), engine.clenchEnd(2800L, durationMs = 900L))
+        assertEquals(listOf(MediaCommand.VolumeDown()), engine.clenchEnd(2800L, durationMs = 900L))
     }
 
     @Test
     fun `a clench step held too briefly fails the macro`() {
         val blinkThenClench = macro(
             "blink-clench",
-            MediaCommand.VolumeDown,
+            MediaCommand.VolumeDown(),
             InputStep(DOUBLE_BLINK),
             InputStep(CLENCH, minHoldMs = 500L, maxHoldMs = 1500L),
         )
@@ -204,7 +204,7 @@ class InputMacroEngineTest {
     fun `a clench past the step maximum fails before the clench ends`() {
         val blinkThenClench = macro(
             "blink-clench",
-            MediaCommand.VolumeDown,
+            MediaCommand.VolumeDown(),
             InputStep(DOUBLE_BLINK),
             InputStep(CLENCH, minHoldMs = 500L, maxHoldMs = 1500L),
         )
@@ -220,7 +220,7 @@ class InputMacroEngineTest {
     fun `a cancelled clench fails the step`() {
         val blinkThenClench = macro(
             "blink-clench",
-            MediaCommand.VolumeDown,
+            MediaCommand.VolumeDown(),
             InputStep(DOUBLE_BLINK),
             InputStep(CLENCH, minHoldMs = 500L),
         )
@@ -242,7 +242,7 @@ class InputMacroEngineTest {
             InputStep(CLENCH, minHoldMs = 500L, maxHoldMs = 1200L),
             InputStep(TURN_RIGHT, withinMs = 2000L),
         )
-        val clenchVolume = hold("clench", 500L, 1200L, MediaCommand.VolumeUp)
+        val clenchVolume = hold("clench", 500L, 1200L, MediaCommand.VolumeUp())
 
         val completed = engine(clenchThenRight, clenchVolume)
         completed.clenchStart(1000L)
@@ -252,7 +252,7 @@ class InputMacroEngineTest {
         val abandoned = engine(clenchThenRight, clenchVolume)
         abandoned.clenchStart(1000L)
         abandoned.clenchEnd(1800L, durationMs = 900L)
-        assertEquals(listOf(MediaCommand.VolumeUp), abandoned.at(3801L))
+        assertEquals(listOf(MediaCommand.VolumeUp()), abandoned.at(3801L))
     }
 
     @Test

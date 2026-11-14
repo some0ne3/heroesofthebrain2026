@@ -57,13 +57,13 @@ class EditorLogicTest {
                     id = "clench-volume-up",
                     name = "Volume Up",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 500L, maxDurationMs = 1200L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
                 ),
                 Binding(
                     id = "clench-volume-down",
                     name = "Volume Down",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 1500L, maxDurationMs = 3000L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
                 ),
             ),
         )
@@ -101,13 +101,13 @@ class EditorLogicTest {
                 id = "clench-1",
                 name = "Clench Short",
                 trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 400L, maxDurationMs = 1000L),
-                action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+                action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
             ),
             Binding(
                 id = "clench-2",
                 name = "Clench Medium Overlap",
                 trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 800L, maxDurationMs = 1600L),
-                action = RuleAction.SingleCommand(MediaCommand.VolumeDown),
+                action = RuleAction.SingleCommand(MediaCommand.VolumeDown()),
             ),
         )
 
@@ -159,7 +159,7 @@ class EditorLogicTest {
             timing = BindingTiming(delayBeforeMs = 100L, cooldownAfterMs = 250L),
             action = RuleAction.Macro(
                 MacroStep(MediaCommand.Next, delayAfterMs = 200L),
-                MacroStep(MediaCommand.VolumeUp, delayAfterMs = 0L),
+                MacroStep(MediaCommand.VolumeUp(), delayAfterMs = 0L),
             ),
         )
 
@@ -183,7 +183,7 @@ class EditorLogicTest {
         assertEquals(200L, timeline[4].durationMs)
 
         assertEquals(MacroItemType.COMMAND, timeline[5].type)
-        assertEquals(MediaCommand.VolumeUp, timeline[5].command)
+        assertEquals(MediaCommand.VolumeUp(), timeline[5].command)
 
         assertEquals(MacroItemType.COOLDOWN, timeline[6].type)
         assertEquals(250L, timeline[6].durationMs)

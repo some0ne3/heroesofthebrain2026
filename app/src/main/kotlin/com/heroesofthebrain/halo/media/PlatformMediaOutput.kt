@@ -1,6 +1,15 @@
 package com.heroesofthebrain.halo.media
 
-class PlatformMediaOutput(private val platform: MediaPlatform) : MediaOutput {
+import com.heroesofthebrain.halo.input.ArrowKey
+import com.heroesofthebrain.halo.input.InputPlatform
+import com.heroesofthebrain.halo.input.NoInputPlatform
+import com.heroesofthebrain.halo.input.ScrollDirection
+import com.heroesofthebrain.halo.input.scrollPath
+
+class PlatformMediaOutput(
+    private val platform: MediaPlatform,
+    private val input: InputPlatform = NoInputPlatform,
+) : MediaOutput {
 
     override fun execute(cmd: MediaCommand): MediaResult = try {
         when (cmd) {
@@ -10,11 +19,17 @@ class PlatformMediaOutput(private val platform: MediaPlatform) : MediaOutput {
             MediaCommand.Stop -> key(MediaKey.STOP)
             MediaCommand.Next -> key(MediaKey.NEXT)
             MediaCommand.Previous -> key(MediaKey.PREVIOUS)
-            MediaCommand.VolumeUp -> volume(VolumeAdjust.RAISE)
-            MediaCommand.VolumeDown -> volume(VolumeAdjust.LOWER)
-            MediaCommand.Mute -> volume(VolumeAdjust.TOGGLE_MUTE)
+            is MediaCommand.VolumeUp -> volume(VolumeAdjust.RAISE, cmd.steps)
+            is MediaCommand.VolumeDown -> volume(VolumeAdjust.LOWER, cmd.steps)
+            MediaCommand.Mute -> volume(VolumeAdjust.TOGGLE_MUTE, 1)
             is MediaCommand.SeekForward -> seek(cmd.amountMs)
             is MediaCommand.SeekBack -> seek(-cmd.amountMs)
+            is MediaCommand.ScrollDown -> scroll(ScrollDirection.DOWN, cmd.distancePercent)
+            is MediaCommand.ScrollUp -> scroll(ScrollDirection.UP, cmd.distancePercent)
+            MediaCommand.ArrowUp -> arrow(ArrowKey.UP)
+            MediaCommand.ArrowDown -> arrow(ArrowKey.DOWN)
+            MediaCommand.ArrowLeft -> arrow(ArrowKey.LEFT)
+            MediaCommand.ArrowRight -> arrow(ArrowKey.RIGHT)
         }
     } catch (e: Exception) {
         MediaResult.Failed(e.message ?: e.javaClass.simpleName)
@@ -27,10 +42,25 @@ class PlatformMediaOutput(private val platform: MediaPlatform) : MediaOutput {
         return MediaResult.KeyDispatched(key, target)
     }
 
-    private fun volume(adjust: VolumeAdjust): MediaResult {
+    // One adjust per step, so the system's own step size and its headphone volume limit still apply.
+    private fun volume(adjust: VolumeAdjust, steps: Int): MediaResult {
         if (platform.volumeFixed) return MediaResult.Unsupported("this device has fixed volume")
-        platform.adjustMusicVolume(adjust)
-        return MediaResult.VolumeAdjusted(adjust, platform.musicVolume())
+        repeat(steps) { platform.adjustMusicVolume(adjust) }
+        return MediaResult.VolumeAdjusted(adjust, platform.musicVolume(), steps)
+    }
+
+    private fun scroll(direction: ScrollDirection, distancePercent: Int): MediaResult {
+        if (!input.connected) return MediaResult.Unsupported(INPUT_SERVICE_OFF)
+        val path = scrollPath(direction, distancePercent, input.screenSize())
+        if (!input.swipe(path)) return MediaResult.Failed("the system did not accept the swipe")
+        return MediaResult.Scrolled(direction, distancePercent)
+    }
+
+    private fun arrow(key: ArrowKey): MediaResult {
+        if (!input.arrowKeysSupported) return MediaResult.Unsupported("arrow keys need Android 13 or newer")
+        if (!input.connected) return MediaResult.Unsupported(INPUT_SERVICE_OFF)
+        if (!input.pressArrow(key)) return MediaResult.Failed("the system did not accept the arrow key")
+        return MediaResult.ArrowPressed(key)
     }
 
     private fun seek(deltaMs: Long): MediaResult {
@@ -57,5 +87,9 @@ class PlatformMediaOutput(private val platform: MediaPlatform) : MediaOutput {
         }
         val why = if (session.canSeekTo) "position unknown" else "no seek support advertised"
         return MediaResult.Unsupported("${session.packageName}: $why")
+    }
+
+    companion object {
+        const val INPUT_SERVICE_OFF = "turn on Freehand in Accessibility settings to scroll and press arrow keys"
     }
 }

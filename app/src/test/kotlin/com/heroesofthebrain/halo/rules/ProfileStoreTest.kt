@@ -130,7 +130,7 @@ class ProfileStoreTest {
                 Binding(
                     id = "b1",
                     trigger = Trigger.Hold(GestureType.CLENCH, minDurationMs = 600L, maxDurationMs = 1500L),
-                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp),
+                    action = RuleAction.SingleCommand(MediaCommand.VolumeUp()),
                 )
             ),
         )
@@ -144,6 +144,57 @@ class ProfileStoreTest {
         assertEquals("Exported Profile", imported.name)
         assertEquals(1, imported.bindings.size)
         assertTrue(imported.bindings.first().trigger is Trigger.Hold)
+    }
+
+    @Test
+    fun `profiles saved when volume up was an object still load, as one step`() {
+        val store = ProfileStore(tempFolder.newFolder("profiles"))
+        val profile = BindingProfile(
+            id = "old",
+            name = "Old",
+            bindings = listOf(
+                Binding(id = "b1", trigger = Trigger.Single(GestureType.CLENCH), action = RuleAction.SingleCommand(MediaCommand.Mute)),
+            ),
+        )
+        // Mute is still an object, so swapping its name in gives exactly what the old VolumeUp object wrote.
+        val oldJson = store.exportToJson(profile).replace("MediaCommand.Mute", "MediaCommand.VolumeUp")
+        assertTrue(oldJson.contains("\"type\": \"com.heroesofthebrain.halo.media.MediaCommand.VolumeUp\""))
+
+        val imported = store.importFromJson(oldJson)
+        assertEquals(MediaCommand.VolumeUp(1), (imported.bindings.single().action as RuleAction.SingleCommand).command)
+    }
+
+    @Test
+    fun `volume steps, scroll distance and arrow keys survive a round trip`() {
+        val store = ProfileStore(tempFolder.newFolder("profiles"))
+        val action = RuleAction.Macro(
+            MacroStep(MediaCommand.VolumeDown(4), delayAfterMs = 100L),
+            MacroStep(MediaCommand.ScrollDown(70), delayAfterMs = 100L),
+            MacroStep(MediaCommand.ArrowLeft),
+        )
+        val profile = BindingProfile(
+            id = "feed",
+            name = "Feed",
+            bindings = listOf(Binding(id = "b1", trigger = Trigger.Single(GestureType.TURN_DOWN), action = action)),
+        )
+        val imported = store.importFromJson(store.exportToJson(profile))
+        assertEquals(action, imported.bindings.single().action)
+    }
+
+    @Test
+    fun `only enabled bindings that scroll or press arrows ask for the input service`() {
+        assertFalse(BindingProfile.defaultProfile().usesInputService())
+
+        val scroll = Binding(
+            id = "b1",
+            trigger = Trigger.Single(GestureType.TURN_DOWN),
+            action = RuleAction.Macro(MacroStep(MediaCommand.Pause, 100L), MacroStep(MediaCommand.ScrollDown())),
+        )
+        val profile = BindingProfile(id = "p", name = "P", bindings = listOf(scroll))
+        assertTrue(profile.usesInputService())
+        assertFalse(profile.copy(bindings = listOf(scroll.copy(enabled = false))).usesInputService())
+        val arrowRepeat = scroll.copy(action = RuleAction.RepeatWhileHeld(MediaCommand.ArrowDown))
+        assertTrue(profile.copy(bindings = listOf(arrowRepeat)).usesInputService())
     }
 
     @Test
