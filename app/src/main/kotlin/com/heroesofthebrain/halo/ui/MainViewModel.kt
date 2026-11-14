@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class SourceKind { DEVICE, REPLAY }
 
-enum class ActiveScreen { MAIN, CALIBRATION, PRACTICE }
+enum class ActiveScreen { MAIN, CALIBRATION, PRACTICE, EDITOR }
 
 data class LogEntry(val id: Long, val wallTimeMs: Long, val streamTimeMs: Long, val type: GestureType, val text: String, val confidence: Float)
 
@@ -58,6 +58,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val pipeline = HaloRuntime.pipeline(app)
     val store = CalibrationStore.inAppStorage(app)
+    val profileStore = HaloRuntime.profileStore(app)
     val recalibrationPolicy = RecalibrationPolicy()
 
     val frames: Flow<EegFrame> get() = pipeline.frames
@@ -171,6 +172,11 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun openPractice() {
         _ui.update { it.copy(activeScreen = ActiveScreen.PRACTICE) }
+    }
+
+    fun openEditor() {
+        recalibrationPolicy.dismiss()
+        _ui.update { it.copy(activeScreen = ActiveScreen.EDITOR) }
     }
 
     fun closeChildScreen() {

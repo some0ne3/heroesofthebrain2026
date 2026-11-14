@@ -82,14 +82,14 @@ Done when: a profile loaded from JSON turns replayed recordings into the expecte
 
 ## 6. Editor UI
 
-- [ ] Profile list: create, duplicate, rename, delete, choose the active profile.
-- [ ] Binding list for a profile, with an on/off toggle per binding.
-- [ ] Binding editor: choose the trigger, set durations, counts and gaps, choose the action, set the delays, cooldown and repeat interval.
-- [ ] Prefill duration ranges from the user's calibration, and show their measured hold lengths next to the controls.
-- [ ] Conflict warnings: overlapping hold ranges, sequences that shadow a single-gesture binding, and the wait an ambiguous binding adds.
-- [ ] "Try it" for one binding: the user performs the gesture and sees whether it matched and with what timing, with no action fired.
-- [ ] Ship a default profile.
-- [ ] Optional: a timeline view of a macro's steps, similar to Razer Synapse.
+- [x] Profile list: create, duplicate, rename, delete, choose the active profile.
+- [x] Binding list for a profile, with an on/off toggle per binding.
+- [x] Binding editor: choose the trigger, set durations, counts and gaps, choose the action, set the delays, cooldown and repeat interval.
+- [x] Prefill duration ranges from the user's calibration, and show their measured hold lengths next to the controls.
+- [x] Conflict warnings: overlapping hold ranges, sequences that shadow a single-gesture binding, and the wait an ambiguous binding adds.
+- [x] "Try it" for one binding: the user performs the gesture and sees whether it matched and with what timing, with no action fired.
+- [x] Ship a default profile.
+- [x] Optional: a timeline view of a macro's steps, similar to Razer Synapse.
 
 Done when: a user can build the default profile from scratch in the editor and it behaves the same as the shipped one.
 

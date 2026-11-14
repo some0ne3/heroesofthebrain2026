@@ -61,6 +61,7 @@ import com.heroesofthebrain.halo.service.ActionBlock
 import com.heroesofthebrain.halo.ui.calibration.CalibrationRoute
 import com.heroesofthebrain.halo.ui.calibration.PracticeRoute
 import com.heroesofthebrain.halo.ui.calibration.formatDate
+import com.heroesofthebrain.halo.ui.editor.EditorRoute
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -146,6 +147,17 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
             )
             return
         }
+        ActiveScreen.EDITOR -> {
+            BackHandler { vm.closeChildScreen() }
+            EditorRoute(
+                profileStore = vm.profileStore,
+                calibrationStore = vm.store,
+                events = vm.events,
+                onClose = vm::closeChildScreen,
+                modifier = Modifier.fillMaxSize(),
+            )
+            return
+        }
         ActiveScreen.MAIN -> Unit
     }
 
@@ -215,6 +227,11 @@ fun MainScreen(vm: MainViewModel, onConnect: () -> Unit, onAllowBackground: () -
                     vm.openPractice()
                 }) {
                     Text("Practice")
+                }
+                OutlinedButton(onClick = {
+                    vm.openEditor()
+                }) {
+                    Text("Editor")
                 }
             }
             Spacer(Modifier.height(8.dp))
