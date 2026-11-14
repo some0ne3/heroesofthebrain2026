@@ -1,0 +1,6 @@
+// Versions follow what BrainAccessKit 2.3.1 was tested with (AGP 8.10.x, Kotlin 2.0.x)
+plugins {
+    id("com.android.application") version "8.10.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+}

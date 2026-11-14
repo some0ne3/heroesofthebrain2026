@@ -1,7 +1,9 @@
 .direnv/
 *.xdf
 .gradle/
+.kotlin/
 build/
+app/libs/*.zip
 local.properties
 __pycache__/
 .ipynb_checkpoints/
