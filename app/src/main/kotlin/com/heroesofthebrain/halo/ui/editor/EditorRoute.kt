@@ -739,7 +739,7 @@ private fun BindingCard(
         is Trigger.Single -> t.gesture
         is Trigger.Hold -> t.gesture
         is Trigger.Repeat -> t.gesture
-        is Trigger.Sequence -> t.gestures.firstOrNull()
+        is Trigger.InputMacro -> t.steps.first().gesture
     }
 
     Card(
@@ -824,7 +824,7 @@ private fun BindingCard(
                     color = Amber.copy(alpha = 0.15f),
                 ) {
                     Text(
-                        text = "Shadowed by sequence/repeat (+${shadowWaitMs}ms extra wait)",
+                        text = "Shadowed by input macro/repeat (+${shadowWaitMs}ms extra wait)",
                         fontSize = 11.sp,
                         color = Amber,
                         fontWeight = FontWeight.Medium,

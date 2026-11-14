@@ -6,7 +6,10 @@ import com.heroesofthebrain.halo.detect.GestureEvent
 import com.heroesofthebrain.halo.detect.GestureInstant
 import com.heroesofthebrain.halo.detect.GestureStart
 import com.heroesofthebrain.halo.rules.Binding
+import com.heroesofthebrain.halo.rules.InputStep
 import com.heroesofthebrain.halo.rules.Trigger
+import com.heroesofthebrain.halo.rules.describe
+import com.heroesofthebrain.halo.rules.formatWindow
 import java.util.concurrent.atomic.AtomicLong
 
 class TryItTester(
@@ -30,8 +33,11 @@ class TryItTester(
             holdOnsetMs = 0L,
             repeatCountSoFar = 0,
             repeatLastEventMs = 0L,
-            sequenceStepIndex = 0,
-            sequenceLastEventMs = 0L,
+            macroStepIndex = 0,
+            macroLastStepMs = 0L,
+            macroStartedMs = 0L,
+            macroHolding = false,
+            macroRemainingMs = null,
             lastEvent = null,
             message = "Waiting for gesture: ${binding.triggerDescription()}",
             activeBreakdown = null,
@@ -46,6 +52,12 @@ class TryItTester(
             val elapsed = currentTimeMs - session.holdOnsetMs
             session = session.copy(currentHoldElapsedMs = elapsed)
         }
+        val macro = binding.trigger as? Trigger.InputMacro ?: return
+        expireMacroStep(macro, currentTimeMs)
+        if (session.macroStepIndex > 0 && !session.macroHolding) {
+            val window = macro.steps[session.macroStepIndex].withinMs
+            session = session.copy(macroRemainingMs = (window - (currentTimeMs - session.macroLastStepMs)).coerceAtLeast(0L))
+        }
     }
 
     fun processEvent(event: GestureEvent, timestampMs: Long = clock()): TryItSession {
@@ -55,7 +67,7 @@ class TryItTester(
             is Trigger.Single -> processSingle(trigger, event, timestampMs)
             is Trigger.Hold -> processHold(trigger, event, timestampMs)
             is Trigger.Repeat -> processRepeat(trigger, event, timestampMs)
-            is Trigger.Sequence -> processSequence(trigger, event, timestampMs)
+            is Trigger.InputMacro -> processInputMacro(trigger, event, timestampMs)
         }
         return session
     }
@@ -190,71 +202,126 @@ class TryItTester(
         }
     }
 
-    private fun processSequence(trigger: Trigger.Sequence, event: GestureEvent, timestampMs: Long) {
-        if (event !is GestureInstant && event !is GestureStart) return
+    // Mirrors the engine: steps in order, each within its window, and a wrong gesture starts over.
+    private fun processInputMacro(trigger: Trigger.InputMacro, event: GestureEvent, timestampMs: Long) {
+        val steps = trigger.steps
+        expireMacroStep(trigger, timestampMs)
+        val index = session.macroStepIndex
+        val step = steps[index]
+        val holding = session.macroHolding
 
-        val step = session.sequenceStepIndex
-        val expected = trigger.gestures.getOrNull(step) ?: return
-        val lastTime = session.sequenceLastEventMs
-        val gap = if (step > 0) timestampMs - lastTime else 0L
-
-        if (step > 0 && gap > trigger.maxGapMs) {
-            // Timed out: check if this gesture is the first gesture of the sequence
-            if (event.type == trigger.gestures.first()) {
-                session = session.copy(
-                    sequenceStepIndex = 1,
-                    sequenceLastEventMs = timestampMs,
-                    message = "Sequence restart: 1/${trigger.gestures.size} (${event.type.name})",
-                )
-                return
-            } else {
-                session = session.copy(
-                    status = TryItStatus.TIMED_OUT,
-                    sequenceStepIndex = 0,
-                    sequenceLastEventMs = 0L,
-                    message = "Sequence timed out (gap was ${gap} ms > max ${trigger.maxGapMs} ms)",
-                )
-                return
+        when (event) {
+            is GestureStart -> {
+                if (!holding && step.gesture == event.type) {
+                    session = session.copy(
+                        status = TryItStatus.HOLDING,
+                        macroHolding = true,
+                        macroRemainingMs = null,
+                        message = "Step ${index + 1}/${steps.size}: holding ${step.gesture.name}… target ${holdRange(step)}",
+                    )
+                }
+            }
+            is GestureCancel -> {
+                if (holding && step.gesture == event.type) {
+                    failMacro(TryItStatus.CANCELLED, "Step ${index + 1} cancelled: ${event.reason.name.lowercase()}", timestampMs)
+                }
+            }
+            is GestureEnd -> {
+                if (holding && step.gesture == event.type) {
+                    val duration = event.durationMs
+                    when {
+                        duration < step.minHoldMs ->
+                            failMacro(TryItStatus.TOO_SHORT, "Step ${index + 1} hold too short: $duration ms (target ${holdRange(step)})", timestampMs)
+                        step.maxHoldMs != null && duration > step.maxHoldMs ->
+                            failMacro(TryItStatus.TOO_LONG, "Step ${index + 1} hold too long: $duration ms (target ${holdRange(step)})", timestampMs)
+                        else -> advanceMacro(trigger, timestampMs)
+                    }
+                } else if (index > 0) {
+                    failMacro(TryItStatus.WRONG_STEP, "Expected ${step.gesture.name} for step ${index + 1}, got ${event.type.name}", timestampMs)
+                }
+            }
+            is GestureInstant -> {
+                if (!holding && step.gesture == event.type && !step.gesture.held) {
+                    advanceMacro(trigger, timestampMs)
+                } else if (index > 0 || holding) {
+                    failMacro(TryItStatus.WRONG_STEP, "Expected ${step.gesture.name} for step ${index + 1}, got ${event.type.name}", timestampMs)
+                    val first = steps.first()
+                    if (first.gesture == event.type && !first.gesture.held) advanceMacro(trigger, timestampMs)
+                }
             }
         }
+    }
 
-        if (event.type == expected) {
-            val nextStep = step + 1
-            if (nextStep >= trigger.gestures.size) {
-                val breakdown = computeBreakdown(triggerDurationMs = gap)
-                val result = TryItResult(
-                    id = nextResultId.incrementAndGet(),
-                    status = TryItStatus.MATCHED,
-                    timestampMs = timestampMs,
-                    summary = "Sequence matched: ${trigger.gestures.joinToString(" → ") { it.name }}",
-                    timingBreakdown = breakdown,
-                )
-                session = session.copy(
-                    status = TryItStatus.MATCHED,
-                    sequenceStepIndex = 0,
-                    sequenceLastEventMs = 0L,
-                    message = "Sequence fully matched!",
-                    history = listOf(result) + session.history.take(9),
-                    activeBreakdown = breakdown,
-                )
-            } else {
-                val nextExpected = trigger.gestures[nextStep]
-                session = session.copy(
-                    status = TryItStatus.LISTENING,
-                    sequenceStepIndex = nextStep,
-                    sequenceLastEventMs = timestampMs,
-                    message = "Step $nextStep/${trigger.gestures.size} (${event.type.name}) ok! Next: ${nextExpected.name} within ${trigger.maxGapMs} ms",
-                )
-            }
-        } else if (event.type == trigger.gestures.first()) {
-            // Restarted sequence
+    private fun expireMacroStep(trigger: Trigger.InputMacro, nowMs: Long) {
+        val index = session.macroStepIndex
+        if (index == 0 || session.macroHolding) return
+        val step = trigger.steps[index]
+        val gap = nowMs - session.macroLastStepMs
+        if (gap > step.withinMs) {
+            failMacro(TryItStatus.TIMED_OUT, "Step ${index + 1} (${step.gesture.name}) came too late: $gap ms > ${step.withinMs} ms", nowMs)
+        }
+    }
+
+    private fun advanceMacro(trigger: Trigger.InputMacro, nowMs: Long) {
+        val steps = trigger.steps
+        val done = session.macroStepIndex
+        val startedMs = if (done == 0) nowMs else session.macroStartedMs
+        val nextIndex = done + 1
+        if (nextIndex == steps.size) {
+            val breakdown = computeBreakdown(triggerDurationMs = nowMs - startedMs)
+            val result = TryItResult(
+                id = nextResultId.incrementAndGet(),
+                status = TryItStatus.MATCHED,
+                timestampMs = nowMs,
+                summary = "Input macro matched: ${trigger.describe()}",
+                timingBreakdown = breakdown,
+            )
             session = session.copy(
-                sequenceStepIndex = 1,
-                sequenceLastEventMs = timestampMs,
-                message = "Restarted sequence: 1/${trigger.gestures.size} (${event.type.name})",
+                status = TryItStatus.MATCHED,
+                macroStepIndex = 0,
+                macroLastStepMs = 0L,
+                macroStartedMs = 0L,
+                macroHolding = false,
+                macroRemainingMs = null,
+                message = "All ${steps.size} steps matched in ${nowMs - startedMs} ms",
+                history = listOf(result) + session.history.take(9),
+                activeBreakdown = breakdown,
+            )
+        } else {
+            val next = steps[nextIndex]
+            session = session.copy(
+                status = TryItStatus.LISTENING,
+                macroStepIndex = nextIndex,
+                macroLastStepMs = nowMs,
+                macroStartedMs = startedMs,
+                macroHolding = false,
+                macroRemainingMs = next.withinMs,
+                message = "Step $nextIndex/${steps.size} ok. Next: ${next.describe(first = true)} within ${formatWindow(next.withinMs)}",
             )
         }
     }
+
+    private fun failMacro(status: TryItStatus, message: String, nowMs: Long) {
+        val result = TryItResult(
+            id = nextResultId.incrementAndGet(),
+            status = status,
+            timestampMs = nowMs,
+            summary = message,
+        )
+        session = session.copy(
+            status = status,
+            macroStepIndex = 0,
+            macroLastStepMs = 0L,
+            macroStartedMs = 0L,
+            macroHolding = false,
+            macroRemainingMs = null,
+            message = message,
+            history = listOf(result) + session.history.take(9),
+            activeBreakdown = null,
+        )
+    }
+
+    private fun holdRange(step: InputStep): String = "${step.minHoldMs}..${step.maxHoldMs?.toString() ?: "∞"} ms"
 
     private fun computeBreakdown(triggerDurationMs: Long): TimingBreakdown {
         val delayBefore = binding.timing.delayBeforeMs
@@ -276,7 +343,7 @@ fun Binding.triggerDescription(): String = when (val t = trigger) {
     is Trigger.Single -> "${t.gesture.name} (single)"
     is Trigger.Hold -> "Hold ${t.gesture.name} (${t.minDurationMs}..${t.maxDurationMs?.toString() ?: "∞"} ms)"
     is Trigger.Repeat -> "${t.count} × ${t.gesture.name} (gap ≤ ${t.maxGapMs} ms)"
-    is Trigger.Sequence -> t.gestures.joinToString(" → ") { it.name } + " (gap ≤ ${t.maxGapMs} ms)"
+    is Trigger.InputMacro -> t.describe()
 }
 
 fun Binding.actionDescription(): String = when (val a = action) {

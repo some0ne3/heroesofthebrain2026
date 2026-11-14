@@ -210,14 +210,14 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `sequence trigger matches sequence of gestures`() {
-        val sequenceBinding = Binding(
+    fun `input macro matches gestures in order`() {
+        val macroBinding = Binding(
             id = "right-then-left",
-            trigger = Trigger.Sequence(listOf(GestureType.TURN_RIGHT, GestureType.TURN_LEFT), maxGapMs = 800L),
+            trigger = Trigger.InputMacro(GestureType.TURN_RIGHT, GestureType.TURN_LEFT, withinMs = 800L),
             action = RuleAction.SingleCommand(MediaCommand.Previous),
         )
         val engine = RuleEngine(
-            profile = testProfile(listOf(sequenceBinding)),
+            profile = testProfile(listOf(macroBinding)),
             initialContext = EngineContext(actionsAllowed = true, isArmed = true),
         )
 
@@ -229,25 +229,25 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `ambiguity single gesture waits when shadowed by sequence and fires if sequence times out`() {
+    fun `single gesture waits for an input macro starting with it and fires when the macro times out`() {
         val singleBinding = Binding(
             id = "single-right",
             name = "Single Right",
             trigger = Trigger.Single(GestureType.TURN_RIGHT),
             action = RuleAction.SingleCommand(MediaCommand.Next),
         )
-        val sequenceBinding = Binding(
+        val macroBinding = Binding(
             id = "seq-right-left",
             name = "Seq Right Left",
-            trigger = Trigger.Sequence(listOf(GestureType.TURN_RIGHT, GestureType.TURN_LEFT), maxGapMs = 1000L),
+            trigger = Trigger.InputMacro(GestureType.TURN_RIGHT, GestureType.TURN_LEFT, withinMs = 1000L),
             action = RuleAction.SingleCommand(MediaCommand.Previous),
         )
         val engine = RuleEngine(
-            profile = testProfile(listOf(singleBinding, sequenceBinding)),
+            profile = testProfile(listOf(singleBinding, macroBinding)),
             initialContext = EngineContext(actionsAllowed = true, isArmed = true),
         )
 
-        // Turn right arrives at t=1000. Single right is shadowed by sequence with maxGapMs=1000.
+        // Turn right arrives at t=1000. Single right is shadowed by the macro, whose next step has a 1000 ms window.
         val eff1 = engine.processEvent(GestureInstant(GestureType.TURN_RIGHT, timestampMs = 1000L, confidence = 0.8f))
         assertTrue("Single action must not fire immediately due to ambiguity", eff1.none { it is EngineEffect.ExecuteCommand })
 
@@ -255,33 +255,33 @@ class RuleEngineTest {
         val effAt1800 = engine.advanceTime(1800L)
         assertTrue(effAt1800.none { it is EngineEffect.ExecuteCommand })
 
-        // At t=2001 (1001ms after first turn): sequence timed out, single binding fires!
+        // At t=2001 (1001ms after first turn): macro timed out, single binding fires!
         val effAt2001 = engine.advanceTime(2001L)
         assertEquals(1, effAt2001.filterIsInstance<EngineEffect.ExecuteCommand>().size)
         assertEquals(MediaCommand.Next, effAt2001.filterIsInstance<EngineEffect.ExecuteCommand>().first().command)
     }
 
     @Test
-    fun `ambiguity single gesture is cancelled if sequence completes`() {
+    fun `single gesture is dropped when the input macro starting with it completes`() {
         val singleBinding = Binding(
             id = "single-right",
             trigger = Trigger.Single(GestureType.TURN_RIGHT),
             action = RuleAction.SingleCommand(MediaCommand.Next),
         )
-        val sequenceBinding = Binding(
+        val macroBinding = Binding(
             id = "seq-right-left",
-            trigger = Trigger.Sequence(listOf(GestureType.TURN_RIGHT, GestureType.TURN_LEFT), maxGapMs = 1000L),
+            trigger = Trigger.InputMacro(GestureType.TURN_RIGHT, GestureType.TURN_LEFT, withinMs = 1000L),
             action = RuleAction.SingleCommand(MediaCommand.Previous),
         )
         val engine = RuleEngine(
-            profile = testProfile(listOf(singleBinding, sequenceBinding)),
+            profile = testProfile(listOf(singleBinding, macroBinding)),
             initialContext = EngineContext(actionsAllowed = true, isArmed = true),
         )
 
         // Turn right at t=1000
         engine.processEvent(GestureInstant(GestureType.TURN_RIGHT, timestampMs = 1000L, confidence = 0.8f))
 
-        // Turn left at t=1400 (sequence completes!)
+        // Turn left at t=1400 (macro completes!)
         val eff2 = engine.processEvent(GestureInstant(GestureType.TURN_LEFT, timestampMs = 1400L, confidence = 0.8f))
         assertEquals(1, eff2.filterIsInstance<EngineEffect.ExecuteCommand>().size)
         assertEquals(MediaCommand.Previous, eff2.filterIsInstance<EngineEffect.ExecuteCommand>().first().command)
@@ -491,7 +491,7 @@ class RuleEngineTest {
         val seq = Binding(
             id = "seq-rl",
             name = "Right Left",
-            trigger = Trigger.Sequence(listOf(GestureType.TURN_RIGHT, GestureType.TURN_LEFT), maxGapMs = 900L),
+            trigger = Trigger.InputMacro(GestureType.TURN_RIGHT, GestureType.TURN_LEFT, withinMs = 900L),
             action = RuleAction.SingleCommand(MediaCommand.Previous),
         )
         val rep = Binding(
@@ -516,7 +516,7 @@ class RuleEngineTest {
         val warnings = AmbiguityResolver.analyze(listOf(single, seq, rep, holdA, holdB))
 
         assertEquals(3, warnings.size)
-        assertTrue(warnings.any { it is AmbiguityWarning.ShadowedBySequence && it.extraWaitMs == 900L })
+        assertTrue(warnings.any { it is AmbiguityWarning.ShadowedByInputMacro && it.extraWaitMs == 900L })
         assertTrue(warnings.any { it is AmbiguityWarning.ShadowedByRepeat && it.extraWaitMs == 500L })
         assertTrue(warnings.any { it is AmbiguityWarning.OverlappingHoldRanges && it.overlapMinMs == 1200L && it.overlapMaxMs == 1500L })
 

@@ -3,6 +3,7 @@ package com.heroesofthebrain.halo.rules
 import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.media.MediaCommand
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 @Serializable
 enum class MediaCondition {
@@ -44,19 +45,55 @@ sealed interface Trigger {
         }
     }
 
+    // Gestures done in order, each step within its own window after the previous one. Profiles saved with the
+    // older Sequence trigger are converted on load (ProfileMigration).
     @Serializable
-    data class Sequence(
-        val gestures: List<GestureType>,
-        val maxGapMs: Long = 1000L,
-    ) : Trigger {
-        constructor(first: GestureType, second: GestureType, maxGapMs: Long = 1000L) : this(listOf(first, second), maxGapMs)
+    data class InputMacro(val steps: List<InputStep>) : Trigger {
+        constructor(vararg gestures: GestureType, withinMs: Long = InputStep.DEFAULT_WITHIN_MS) :
+            this(gestures.map { InputStep(it, withinMs) })
 
         init {
-            require(gestures.size >= 2) { "sequence must have at least 2 gestures, got ${gestures.size}" }
-            require(maxGapMs > 0) { "maxGapMs must be positive, got $maxGapMs" }
+            require(steps.size >= 2) { "input macro needs at least 2 steps, got ${steps.size}" }
         }
     }
 }
+
+@Serializable
+data class InputStep(
+    val gesture: GestureType,
+    // How long after the previous step finished this one may start; the first step ignores it.
+    val withinMs: Long = DEFAULT_WITHIN_MS,
+    // Held gestures only.
+    val minHoldMs: Long = 0L,
+    val maxHoldMs: Long? = null,
+) {
+    init {
+        require(withinMs > 0) { "withinMs must be positive, got $withinMs" }
+        require(minHoldMs >= 0) { "minHoldMs must be non-negative, got $minHoldMs" }
+        if (maxHoldMs != null) {
+            require(maxHoldMs >= minHoldMs) { "maxHoldMs ($maxHoldMs) must be >= minHoldMs ($minHoldMs)" }
+        }
+    }
+
+    fun acceptsHold(durationMs: Long): Boolean =
+        durationMs >= minHoldMs && (maxHoldMs == null || durationMs <= maxHoldMs)
+
+    companion object {
+        const val DEFAULT_WITHIN_MS = 2000L
+    }
+}
+
+fun InputStep.describe(first: Boolean = false): String {
+    val hold = if (gesture.held) " ${minHoldMs}..${maxHoldMs?.toString() ?: "∞"} ms" else ""
+    val window = if (first) "" else " (≤ ${formatWindow(withinMs)})"
+    return "${gesture.name}$hold$window"
+}
+
+fun Trigger.InputMacro.describe(): String =
+    steps.mapIndexed { index, step -> step.describe(first = index == 0) }.joinToString(" → ")
+
+fun formatWindow(ms: Long): String =
+    if (ms % 1000 == 0L) "${ms / 1000} s" else String.format(Locale.US, "%.1f s", ms / 1000.0)
 
 @Serializable
 data class MacroStep(

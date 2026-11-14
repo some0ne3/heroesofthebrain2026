@@ -8,6 +8,7 @@ import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.BindingProfile
 import com.heroesofthebrain.halo.rules.RuleAction
 import com.heroesofthebrain.halo.rules.Trigger
+import com.heroesofthebrain.halo.rules.describe
 
 enum class TryItStatus {
     IDLE,
@@ -17,6 +18,7 @@ enum class TryItStatus {
     TOO_SHORT,
     TOO_LONG,
     TIMED_OUT,
+    WRONG_STEP,
     CANCELLED,
 }
 
@@ -46,8 +48,12 @@ data class TryItSession(
     val holdOnsetMs: Long = 0L,
     val repeatCountSoFar: Int = 0,
     val repeatLastEventMs: Long = 0L,
-    val sequenceStepIndex: Int = 0,
-    val sequenceLastEventMs: Long = 0L,
+    // Input macro progress: the step being waited for, and when the previous one finished.
+    val macroStepIndex: Int = 0,
+    val macroLastStepMs: Long = 0L,
+    val macroStartedMs: Long = 0L,
+    val macroHolding: Boolean = false,
+    val macroRemainingMs: Long? = null,
     val lastEvent: GestureEvent? = null,
     val message: String = "Perform the gesture to test this binding",
     val history: List<TryItResult> = emptyList(),
@@ -83,7 +89,7 @@ fun buildTimelineItems(binding: Binding, ambiguityWaitMs: Long = 0L): List<Macro
         is Trigger.Single -> "Trigger: ${t.gesture.name}"
         is Trigger.Hold -> "Hold: ${t.gesture.name} (${t.minDurationMs}..${t.maxDurationMs?.toString() ?: "∞"} ms)"
         is Trigger.Repeat -> "Repeat: ${t.gesture.name} × ${t.count} (gap ≤ ${t.maxGapMs} ms)"
-        is Trigger.Sequence -> "Sequence: ${t.gestures.joinToString(" → ") { it.name }} (gap ≤ ${t.maxGapMs} ms)"
+        is Trigger.InputMacro -> "Input macro: ${t.describe()}"
     }
     items += MacroTimelineItem(
         id = "trigger",
@@ -93,7 +99,7 @@ fun buildTimelineItems(binding: Binding, ambiguityWaitMs: Long = 0L): List<Macro
         durationMs = when (val t = binding.trigger) {
             is Trigger.Hold -> t.minDurationMs
             is Trigger.Repeat -> t.maxGapMs * (t.count - 1)
-            is Trigger.Sequence -> t.maxGapMs * (t.gestures.size - 1)
+            is Trigger.InputMacro -> t.steps.drop(1).sumOf { it.withinMs }
             is Trigger.Single -> 0L
         },
     )

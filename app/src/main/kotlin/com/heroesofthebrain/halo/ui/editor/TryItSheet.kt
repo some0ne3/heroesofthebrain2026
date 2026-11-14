@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.heroesofthebrain.halo.media.describe
 import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.Trigger
+import com.heroesofthebrain.halo.rules.formatWindow
 import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
 import com.heroesofthebrain.halo.ui.theme.FreehandColors
@@ -66,9 +69,10 @@ fun TryItSheet(
     onTick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Keep ticking while holding so elapsed ms increments smoothly
-    LaunchedEffect(session.status) {
-        if (session.status == TryItStatus.HOLDING) {
+    // Keep ticking while holding so elapsed ms increments smoothly, and while a macro waits for its next step
+    val macroInProgress = session.macroStepIndex > 0
+    LaunchedEffect(session.status, macroInProgress) {
+        if (session.status == TryItStatus.HOLDING || macroInProgress) {
             while (true) {
                 delay(30)
                 onTick()
@@ -214,13 +218,14 @@ private fun TargetCriteriaCard(binding: Binding) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TestStatusGauge(session: TryItSession) {
     val statusColor by animateColorAsState(
         when (session.status) {
             TryItStatus.MATCHED -> Green
             TryItStatus.HOLDING -> Amber
-            TryItStatus.TOO_SHORT, TryItStatus.TOO_LONG, TryItStatus.TIMED_OUT -> Amber
+            TryItStatus.TOO_SHORT, TryItStatus.TOO_LONG, TryItStatus.TIMED_OUT, TryItStatus.WRONG_STEP -> Amber
             TryItStatus.CANCELLED -> Red
             TryItStatus.IDLE, TryItStatus.LISTENING -> Grey
         },
@@ -337,18 +342,26 @@ private fun TestStatusGauge(session: TryItSession) {
                 }
             }
 
-            // Sequence indicator
-            if (session.binding.trigger is Trigger.Sequence) {
-                val seq = session.binding.trigger as Trigger.Sequence
+            // Input macro steps
+            if (session.binding.trigger is Trigger.InputMacro) {
+                val macro = session.binding.trigger as Trigger.InputMacro
                 Spacer(Modifier.height(10.dp))
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    seq.gestures.forEachIndexed { idx, g ->
-                        val completed = idx < session.sequenceStepIndex
-                        val isCurrent = idx == session.sequenceStepIndex
+                    macro.steps.forEachIndexed { idx, step ->
+                        val completed = idx < session.macroStepIndex
+                        val isCurrent = idx == session.macroStepIndex
+                        if (idx > 0) {
+                            Text(
+                                text = "≤ ${formatWindow(step.withinMs)} →",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Grey,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                        }
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = when {
@@ -365,14 +378,26 @@ private fun TestStatusGauge(session: TryItSession) {
                                 },
                             ),
                         ) {
+                            val hold = if (step.gesture.held) " ≥ ${formatWindow(step.minHoldMs.coerceAtLeast(100L))}" else ""
                             Text(
-                                text = "${idx + 1}. ${g.title()}",
+                                text = "${idx + 1}. ${step.gesture.title()}$hold",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                         }
                     }
+                }
+                val remaining = session.macroRemainingMs
+                if (remaining != null && session.macroStepIndex > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Step ${session.macroStepIndex + 1} window: ${formatWindow((remaining / 100) * 100)} left",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Amber,
+                    )
                 }
             }
         }
@@ -442,7 +467,7 @@ private fun ResultRow(result: TryItResult) {
     val color = when (result.status) {
         TryItStatus.MATCHED -> Green
         TryItStatus.HOLDING -> Amber
-        TryItStatus.TOO_SHORT, TryItStatus.TOO_LONG, TryItStatus.TIMED_OUT -> Amber
+        TryItStatus.TOO_SHORT, TryItStatus.TOO_LONG, TryItStatus.TIMED_OUT, TryItStatus.WRONG_STEP -> Amber
         TryItStatus.CANCELLED -> Red
         TryItStatus.IDLE, TryItStatus.LISTENING -> Grey
     }

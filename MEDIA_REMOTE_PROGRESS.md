@@ -120,6 +120,7 @@ Completed in worktree `.claude/worktrees/integrate` on branch `media-remote/inte
 - Task 2: every cell in `docs/media-compat.md`. Also whether the notification-access toggle appears. On Android 13+, a sideloaded APK may show "Restricted setting" first; allow it in the app's info screen.
 - Task 3: real turn-and-return overshoot, and clenches longer than about 4.8 s, which probably end early because the baseline adapts.
 - Task 4: a full calibration run with a new user.
+- Input macros: the step editor fits on the phone screen, and "double blink, then a head turn within the window" fires on real gestures. A macro step can't use the arm gesture (long blink in the default profile), because the arm gesture is handled before anything else.
 
 ## Rules used for this work
 

@@ -7,13 +7,14 @@ import kotlin.math.min
 sealed interface AmbiguityWarning {
     val message: String
 
-    data class ShadowedBySequence(
-        val singleBinding: Binding,
-        val sequenceBinding: Binding,
+    // The shadowed binding can be a single gesture, a hold, or a shorter input macro with the same opening steps.
+    data class ShadowedByInputMacro(
+        val shadowedBinding: Binding,
+        val macroBinding: Binding,
         val extraWaitMs: Long,
     ) : AmbiguityWarning {
         override val message: String
-            get() = "'${singleBinding.name.ifEmpty { singleBinding.id }}' will wait ${extraWaitMs}ms to see if '${sequenceBinding.name.ifEmpty { sequenceBinding.id }}' completes"
+            get() = "'${shadowedBinding.name.ifEmpty { shadowedBinding.id }}' will wait up to ${extraWaitMs}ms to see if '${macroBinding.name.ifEmpty { macroBinding.id }}' continues"
     }
 
     data class ShadowedByRepeat(
@@ -55,31 +56,27 @@ object AmbiguityResolver {
         val enabled = bindings.filter { it.enabled }
         val warnings = mutableListOf<AmbiguityWarning>()
 
-        // 1. Single gesture shadowed by Sequence or Repeat
-        val singleBindings = enabled.filter { it.trigger is Trigger.Single }
-        val sequenceBindings = enabled.filter { it.trigger is Trigger.Sequence }
+        // 1. Bindings that wait for an input macro or repeat starting the same way
+        val macroBindings = enabled.filter { it.trigger is Trigger.InputMacro }
         val repeatBindings = enabled.filter { it.trigger is Trigger.Repeat }
 
-        for (single in singleBindings) {
-            val singleTrigger = single.trigger as Trigger.Single
-            val gesture = singleTrigger.gesture
-
-            for (seq in sequenceBindings) {
-                val seqTrigger = seq.trigger as Trigger.Sequence
-                if (seqTrigger.gestures.firstOrNull() == gesture) {
-                    warnings += AmbiguityWarning.ShadowedBySequence(
-                        singleBinding = single,
-                        sequenceBinding = seq,
-                        extraWaitMs = seqTrigger.maxGapMs,
-                    )
-                }
+        for (binding in enabled) {
+            for (macro in macroBindings) {
+                if (macro.id == binding.id) continue
+                val wait = macroShadowWaitMs(binding.trigger, macro.trigger as Trigger.InputMacro) ?: continue
+                warnings += AmbiguityWarning.ShadowedByInputMacro(
+                    shadowedBinding = binding,
+                    macroBinding = macro,
+                    extraWaitMs = wait,
+                )
             }
 
+            val singleTrigger = binding.trigger as? Trigger.Single ?: continue
             for (rep in repeatBindings) {
                 val repTrigger = rep.trigger as Trigger.Repeat
-                if (repTrigger.gesture == gesture) {
+                if (repTrigger.gesture == singleTrigger.gesture) {
                     warnings += AmbiguityWarning.ShadowedByRepeat(
-                        singleBinding = single,
+                        singleBinding = binding,
                         repeatBinding = rep,
                         extraWaitMs = repTrigger.maxGapMs,
                     )
@@ -132,29 +129,25 @@ object AmbiguityResolver {
         is Trigger.Single -> trigger.gesture.name.replace('_', ' ')
         is Trigger.Hold -> "Hold ${trigger.gesture.name.replace('_', ' ')} (${trigger.minDurationMs}..${trigger.maxDurationMs?.toString() ?: "∞"} ms)"
         is Trigger.Repeat -> "${trigger.count}x ${trigger.gesture.name.replace('_', ' ')}"
-        is Trigger.Sequence -> trigger.gestures.joinToString(" → ") { it.name.replace('_', ' ') }
+        is Trigger.InputMacro -> trigger.describe()
     }
 
     /**
-     * Returns the extra wait time (in ms) that a single gesture binding must wait
-     * due to shadowing sequence or repeat bindings.
+     * Returns the longest extra wait (in ms) a binding can add because an input macro or repeat starts the same way.
      */
     fun maxShadowWaitMs(binding: Binding, allBindings: List<Binding>): Long {
         if (!binding.enabled) return 0L
-        val trigger = binding.trigger as? Trigger.Single ?: return 0L
-        val gesture = trigger.gesture
+        val single = binding.trigger as? Trigger.Single
 
         var maxWait = 0L
         for (other in allBindings) {
             if (!other.enabled || other.id == binding.id) continue
             when (val otherTrigger = other.trigger) {
-                is Trigger.Sequence -> {
-                    if (otherTrigger.gestures.firstOrNull() == gesture) {
-                        maxWait = max(maxWait, otherTrigger.maxGapMs)
-                    }
+                is Trigger.InputMacro -> {
+                    macroShadowWaitMs(binding.trigger, otherTrigger)?.let { maxWait = max(maxWait, it) }
                 }
                 is Trigger.Repeat -> {
-                    if (otherTrigger.gesture == gesture) {
+                    if (single != null && otherTrigger.gesture == single.gesture) {
                         maxWait = max(maxWait, otherTrigger.maxGapMs)
                     }
                 }
@@ -163,6 +156,23 @@ object AmbiguityResolver {
         }
         return maxWait
     }
+
+    // When the trigger's input is also the opening of the macro, the engine waits for the macro's next step.
+    private fun macroShadowWaitMs(trigger: Trigger, macro: Trigger.InputMacro): Long? {
+        val steps = macro.steps
+        val opening = when (trigger) {
+            is Trigger.Single -> if (trigger.gesture.held) return null else listOf(InputStep(trigger.gesture))
+            is Trigger.Hold -> listOf(InputStep(trigger.gesture, minHoldMs = trigger.minDurationMs, maxHoldMs = trigger.maxDurationMs))
+            is Trigger.InputMacro -> trigger.steps
+            is Trigger.Repeat -> return null
+        }
+        if (opening.size >= steps.size) return null
+        val sameStart = opening.indices.all { i -> stepsOverlap(opening[i], steps[i]) }
+        return if (sameStart) steps[opening.size].withinMs else null
+    }
+
+    private fun stepsOverlap(a: InputStep, b: InputStep): Boolean =
+        a.gesture == b.gesture && (!a.gesture.held || computeOverlap(a.minHoldMs, a.maxHoldMs, b.minHoldMs, b.maxHoldMs) != null)
 
     private fun computeOverlap(
         minA: Long,

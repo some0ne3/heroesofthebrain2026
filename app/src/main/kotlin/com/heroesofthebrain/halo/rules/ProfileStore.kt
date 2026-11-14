@@ -142,7 +142,7 @@ class ProfileStore(
         json.encodeToString(BindingProfile.serializer(), profile)
 
     fun importFromJson(jsonText: String): BindingProfile {
-        val parsed = json.decodeFromString(BindingProfile.serializer(), jsonText)
+        val parsed = decode(jsonText)
         var id = parsed.id
         var counter = 1
         while (profileFile(id).exists()) {
@@ -156,9 +156,10 @@ class ProfileStore(
     private fun profileFile(id: String): File = File(root, "$id$EXT")
 
     private fun readProfile(file: File): BindingProfile? =
-        if (!file.isFile) null else runCatching {
-            json.decodeFromString<BindingProfile>(file.readText())
-        }.getOrNull()
+        if (!file.isFile) null else runCatching { decode(file.readText()) }.getOrNull()
+
+    private fun decode(text: String): BindingProfile =
+        json.decodeFromJsonElement(BindingProfile.serializer(), ProfileMigration.migrate(json.parseToJsonElement(text)))
 
     private fun writeAtomically(file: File, text: String) {
         file.parentFile?.mkdirs()

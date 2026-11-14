@@ -62,13 +62,17 @@ class RuleEngine(
     )
     private var activeRepeat: ActiveRepeat? = null
 
-    // Sequences & Repeats in progress
-    private data class SequenceState(
+    // Input macros part way through. Once a held step has started it waits for the hold to end, not the deadline.
+    private data class MacroProgress(
         val binding: Binding,
+        val steps: List<InputStep>,
         val nextIndex: Int,
-        var deadlineMs: Long,
-    )
-    private val activeSequences = mutableListOf<SequenceState>()
+        val deadlineMs: Long,
+        val holdStartedMs: Long? = null,
+    ) {
+        val next: InputStep get() = steps[nextIndex]
+    }
+    private val inputMacros = mutableListOf<MacroProgress>()
 
     private data class RepeatState(
         val binding: Binding,
@@ -77,10 +81,11 @@ class RuleEngine(
     )
     private val activeRepeats = mutableListOf<RepeatState>()
 
-    // Pending ambiguous actions (single gesture waiting to see if sequence/repeat completes)
+    // A trigger that matched while longer triggers using the same input could still complete. It fires once all
+    // of those have failed, and is dropped as soon as one of them takes another step or completes.
     private data class PendingAmbiguous(
         val binding: Binding,
-        val fireDeadlineMs: Long,
+        val shadowedBy: Set<String>,
     )
     private val pendingAmbiguousActions = mutableListOf<PendingAmbiguous>()
 
@@ -197,20 +202,15 @@ class RuleEngine(
             }
         }
 
-        // 4. Sequence & Repeat deadlines (cleanup expired progress)
-        activeSequences.removeAll { nowMs > it.deadlineMs }
+        // 4. Progress that ran out of time; a hold can outlast its step's maximum before it ends
+        inputMacros.removeAll { p ->
+            val heldSince = p.holdStartedMs
+            if (heldSince == null) nowMs > p.deadlineMs else p.next.maxHoldMs?.let { nowMs - heldSince > it } == true
+        }
         activeRepeats.removeAll { nowMs > it.deadlineMs }
 
-        // 5. Pending ambiguous actions whose wait time has elapsed
-        val readyAmbiguous = pendingAmbiguousActions.filter { nowMs >= it.fireDeadlineMs }
-        if (readyAmbiguous.isNotEmpty()) {
-            pendingAmbiguousActions.removeAll(readyAmbiguous.toSet())
-            for (pending in readyAmbiguous) {
-                if (matchesConditions(pending.binding)) {
-                    effects += scheduleOrExecute(pending.binding)
-                }
-            }
-        }
+        // 5. Pending ambiguous actions whose longer rivals all failed
+        releasePending(effects)
 
         // 6. Scheduled actions whose delay / cancel window elapsed
         val readyScheduled = scheduledActions.filter { nowMs >= it.executeAtMs && nowMs >= it.cancelWindowUntilMs }
@@ -285,6 +285,11 @@ class RuleEngine(
         activeHold = null
         activeRepeat = null
 
+        // A cancelled hold never happened, so only a macro step waiting on it fails.
+        if (inputMacros.removeAll { it.holdStartedMs != null && it.next.gesture == event.type }) {
+            releasePending(effects)
+        }
+
         // Check scheduled actions in cancel window
         val cancelled = scheduledActions.filter {
             currentTimeMs <= it.cancelWindowUntilMs && (it.cancelGesture == null || it.cancelGesture == event.type)
@@ -300,6 +305,18 @@ class RuleEngine(
     private fun handleGestureStart(event: GestureStart, effects: MutableList<EngineEffect>) {
         activeHold = ActiveHold(event.type, event.onsetMs, event.timestampMs)
 
+        // Other holds are judged when they end, since a hold that gets cancelled never happened.
+        var forMacroStep = false
+        val iterator = inputMacros.listIterator()
+        while (iterator.hasNext()) {
+            val p = iterator.next()
+            if (p.holdStartedMs == null && p.next.gesture == event.type && currentTimeMs <= p.deadlineMs) {
+                iterator.set(p.copy(holdStartedMs = currentTimeMs))
+                forMacroStep = true
+            }
+        }
+        if (forMacroStep) return
+
         // Check if any enabled Hold binding has RepeatWhileHeld
         for (binding in profile.bindings) {
             if (!binding.enabled || !matchesConditions(binding)) continue
@@ -314,11 +331,26 @@ class RuleEngine(
     }
 
     private fun handleGestureEnd(event: GestureEnd, effects: MutableList<EngineEffect>) {
-        val hold = activeHold
         activeHold = null
         activeRepeat = null
 
         val duration = event.durationMs
+
+        val offer = offerToMacros { p ->
+            p.holdStartedMs != null && p.next.gesture == event.type && p.next.acceptsHold(duration)
+        }
+        if (settle(offer, effects)) return
+
+        val started = mutableSetOf<String>()
+        for (binding in profile.bindings) {
+            if (!binding.enabled || !matchesConditions(binding)) continue
+            val trigger = binding.trigger as? Trigger.InputMacro ?: continue
+            val first = trigger.steps.first()
+            if (first.gesture == event.type && first.gesture.held && first.acceptsHold(duration)) {
+                startMacro(binding, trigger)
+                started += binding.id
+            }
+        }
 
         // Find candidate hold bindings
         val candidates = profile.bindings.filter { binding ->
@@ -334,7 +366,7 @@ class RuleEngine(
         if (candidates.isNotEmpty()) {
             // Pick most specific (largest minDurationMs)
             val best = candidates.maxByOrNull { (it.trigger as Trigger.Hold).minDurationMs } ?: candidates.first()
-            effects += scheduleOrExecute(best)
+            fireOrDefer(best, started, effects)
         }
     }
 
@@ -352,105 +384,126 @@ class RuleEngine(
             }
         }
 
-        // 1. Check if gesture continues an active sequence
-        val matchedSequence = activeSequences.firstOrNull { seq ->
-            val seqTrigger = seq.binding.trigger as Trigger.Sequence
-            seqTrigger.gestures.getOrNull(seq.nextIndex) == gesture
+        // 1. Macros in progress take the gesture or fail; repeats ignore other gestures
+        val offer = offerToMacros { p ->
+            p.holdStartedMs == null && currentTimeMs <= p.deadlineMs && !p.next.gesture.held && p.next.gesture == gesture
         }
-
-        if (matchedSequence != null) {
-            val seqTrigger = matchedSequence.binding.trigger as Trigger.Sequence
-            if (matchedSequence.nextIndex == seqTrigger.gestures.lastIndex) {
-                // Completed sequence!
-                activeSequences.remove(matchedSequence)
-                // Cancel pending ambiguous actions shadowed by this sequence
-                dropAmbiguousShadowedBy(matchedSequence.binding)
-                if (matchesConditions(matchedSequence.binding)) {
-                    effects += scheduleOrExecute(matchedSequence.binding)
-                }
-                return
-            } else {
-                // Advance sequence
-                val updatedIndex = matchedSequence.nextIndex + 1
-                matchedSequence.deadlineMs = currentTimeMs + seqTrigger.maxGapMs
-                activeSequences.remove(matchedSequence)
-                activeSequences += matchedSequence.copy(nextIndex = updatedIndex)
-                return
-            }
-        }
-
-        // 2. Check if gesture continues an active repeat
-        val matchedRepeat = activeRepeats.firstOrNull { rep ->
+        val repeatIterator = activeRepeats.iterator()
+        while (repeatIterator.hasNext()) {
+            val rep = repeatIterator.next()
             val repTrigger = rep.binding.trigger as Trigger.Repeat
-            repTrigger.gesture == gesture
-        }
-
-        if (matchedRepeat != null) {
-            val repTrigger = matchedRepeat.binding.trigger as Trigger.Repeat
-            matchedRepeat.countSoFar++
-            if (matchedRepeat.countSoFar >= repTrigger.count) {
-                // Completed repeat!
-                activeRepeats.remove(matchedRepeat)
-                dropAmbiguousShadowedBy(matchedRepeat.binding)
-                if (matchesConditions(matchedRepeat.binding)) {
-                    effects += scheduleOrExecute(matchedRepeat.binding)
-                }
-                return
+            if (repTrigger.gesture != gesture) continue
+            rep.countSoFar++
+            if (rep.countSoFar >= repTrigger.count) {
+                repeatIterator.remove()
+                offer.completed += rep.binding
             } else {
-                matchedRepeat.deadlineMs = currentTimeMs + repTrigger.maxGapMs
-                return
+                rep.deadlineMs = currentTimeMs + repTrigger.maxGapMs
+                offer.took += rep.binding.id
             }
         }
+        if (settle(offer, effects)) return
 
-        // 3. New Sequence or Repeat starts with this gesture?
-        var startedNewMultiGesture = false
+        // 2. Nothing in progress wanted it: it may start new macros and repeats
+        val started = mutableSetOf<String>()
         for (binding in profile.bindings) {
             if (!binding.enabled || !matchesConditions(binding)) continue
             when (val trigger = binding.trigger) {
-                is Trigger.Sequence -> {
-                    if (trigger.gestures.first() == gesture) {
-                        activeSequences += SequenceState(binding, nextIndex = 1, deadlineMs = currentTimeMs + trigger.maxGapMs)
-                        startedNewMultiGesture = true
+                is Trigger.InputMacro -> {
+                    val first = trigger.steps.first()
+                    if (first.gesture == gesture && !first.gesture.held) {
+                        startMacro(binding, trigger)
+                        started += binding.id
                     }
                 }
                 is Trigger.Repeat -> {
                     if (trigger.gesture == gesture) {
                         activeRepeats += RepeatState(binding, countSoFar = 1, deadlineMs = currentTimeMs + trigger.maxGapMs)
-                        startedNewMultiGesture = true
+                        started += binding.id
                     }
                 }
                 else -> Unit
             }
         }
 
-        // 4. Check Single bindings for this gesture
+        // 3. Single bindings wait while anything that just started could still complete
         val singleBindings = profile.bindings.filter {
-            it.enabled && matchesConditions(it) && it.trigger is Trigger.Single && it.trigger.gesture == gesture
+            it.enabled && it.trigger is Trigger.Single && it.trigger.gesture == gesture
         }
-
         for (single in singleBindings) {
-            val shadowWait = AmbiguityResolver.maxShadowWaitMs(single, profile.bindings)
-            if (shadowWait > 0L) {
-                // Ambiguous: wait until deadline before firing
-                pendingAmbiguousActions += PendingAmbiguous(single, fireDeadlineMs = currentTimeMs + shadowWait)
-            } else {
-                // Unambiguous: schedule or execute immediately
-                effects += scheduleOrExecute(single)
-            }
+            fireOrDefer(single, started, effects)
         }
     }
 
-    private fun dropAmbiguousShadowedBy(completedBinding: Binding) {
-        val trigger = completedBinding.trigger
-        val initialGesture = when (trigger) {
-            is Trigger.Sequence -> trigger.gestures.first()
-            is Trigger.Repeat -> trigger.gesture
-            else -> null
-        } ?: return
+    private class Offer {
+        // Progress that took the input and still needs more of it.
+        val took = mutableSetOf<String>()
+        val completed = mutableListOf<Binding>()
+    }
 
-        pendingAmbiguousActions.removeAll { pending ->
-            val t = pending.binding.trigger
-            t is Trigger.Single && t.gesture == initialGesture
+    // Every macro in progress either takes the input or fails: a procedure has to be done in order.
+    private fun offerToMacros(accepts: (MacroProgress) -> Boolean): Offer {
+        val offer = Offer()
+        val snapshot = inputMacros.toList()
+        inputMacros.clear()
+        for (p in snapshot) {
+            if (!accepts(p)) continue
+            val nextIndex = p.nextIndex + 1
+            if (nextIndex == p.steps.size) {
+                offer.completed += p.binding
+            } else {
+                inputMacros += p.copy(
+                    nextIndex = nextIndex,
+                    deadlineMs = currentTimeMs + p.steps[nextIndex].withinMs,
+                    holdStartedMs = null,
+                )
+                offer.took += p.binding.id
+            }
+        }
+        return offer
+    }
+
+    // Returns true when the input belonged to something already in progress.
+    private fun settle(offer: Offer, effects: MutableList<EngineEffect>): Boolean {
+        val progressed = offer.took + offer.completed.map { it.id }
+        pendingAmbiguousActions.removeAll { pending -> pending.shadowedBy.any(progressed::contains) }
+        // What failed on this input lets its waiting rivals fire first, before anything the input itself triggers.
+        releasePending(effects)
+        // Several completing on one input are identical triggers; like any duplicate, only the first one runs.
+        offer.completed.firstOrNull()?.let { fireOrDefer(it, offer.took, effects) }
+        return progressed.isNotEmpty()
+    }
+
+    private fun startMacro(binding: Binding, trigger: Trigger.InputMacro) {
+        inputMacros += MacroProgress(
+            binding = binding,
+            steps = trigger.steps,
+            nextIndex = 1,
+            deadlineMs = currentTimeMs + trigger.steps[1].withinMs,
+        )
+    }
+
+    private fun fireOrDefer(binding: Binding, rivals: Set<String>, effects: MutableList<EngineEffect>) {
+        if (!matchesConditions(binding)) return
+        val others = rivals - binding.id
+        if (others.isEmpty()) {
+            effects += scheduleOrExecute(binding)
+        } else {
+            pendingAmbiguousActions += PendingAmbiguous(binding, others)
+        }
+    }
+
+    private fun releasePending(effects: MutableList<EngineEffect>) {
+        if (pendingAmbiguousActions.isEmpty()) return
+        val live = inputMacros.mapTo(mutableSetOf()) { it.binding.id }
+        activeRepeats.mapTo(live) { it.binding.id }
+        val ready = pendingAmbiguousActions.filter { pending -> pending.shadowedBy.none(live::contains) }
+        if (ready.isEmpty()) return
+        pendingAmbiguousActions.removeAll(ready.toSet())
+        for (pending in ready) {
+            if (matchesConditions(pending.binding)) {
+                effects += scheduleOrExecute(pending.binding)
+            }
         }
     }
 
@@ -567,7 +620,7 @@ class RuleEngine(
         activeHold = null
         activeRepeat = null
         activeMacro = null
-        activeSequences.clear()
+        inputMacros.clear()
         activeRepeats.clear()
 
         for (scheduled in scheduledActions) {

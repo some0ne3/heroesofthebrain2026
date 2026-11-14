@@ -62,10 +62,12 @@ import com.heroesofthebrain.halo.rules.AmbiguityResolver
 import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.BindingConditions
 import com.heroesofthebrain.halo.rules.BindingTiming
+import com.heroesofthebrain.halo.rules.InputStep
 import com.heroesofthebrain.halo.rules.MacroStep
 import com.heroesofthebrain.halo.rules.MediaCondition
 import com.heroesofthebrain.halo.rules.RuleAction
 import com.heroesofthebrain.halo.rules.Trigger
+import com.heroesofthebrain.halo.rules.formatWindow
 import com.heroesofthebrain.halo.ui.color
 import com.heroesofthebrain.halo.ui.title
 import com.heroesofthebrain.halo.ui.theme.FreehandColors
@@ -81,8 +83,13 @@ private val Amber = FreehandColors.Warning
 private val Red = FreehandColors.Error
 private val Grey = FreehandColors.SandMuted
 
-private enum class TriggerKind { SINGLE, HOLD, REPEAT, SEQUENCE }
+private enum class TriggerKind { SINGLE, HOLD, REPEAT, INPUT_MACRO }
 private enum class ActionKind { SINGLE_COMMAND, REPEAT_WHILE_HELD, MACRO }
+
+private val DEFAULT_INPUT_STEPS = listOf(
+    InputStep(GestureType.DOUBLE_BLINK),
+    InputStep(GestureType.TURN_RIGHT),
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -105,7 +112,7 @@ fun BindingEditorScreen(
                 is Trigger.Single -> TriggerKind.SINGLE
                 is Trigger.Hold -> TriggerKind.HOLD
                 is Trigger.Repeat -> TriggerKind.REPEAT
-                is Trigger.Sequence -> TriggerKind.SEQUENCE
+                is Trigger.InputMacro -> TriggerKind.INPUT_MACRO
             },
         )
     }
@@ -137,14 +144,11 @@ fun BindingEditorScreen(
         mutableLongStateOf((initialBinding.trigger as? Trigger.Repeat)?.maxGapMs ?: 800L)
     }
 
-    val sequenceGestures = remember(initialBinding.id) {
-        mutableStateListOf<GestureType>().apply {
-            val seq = (initialBinding.trigger as? Trigger.Sequence)?.gestures
-            if (!seq.isNullOrEmpty()) addAll(seq) else addAll(listOf(GestureType.TURN_LEFT, GestureType.TURN_RIGHT))
+    val inputSteps = remember(initialBinding.id) {
+        mutableStateListOf<InputStep>().apply {
+            val existing = (initialBinding.trigger as? Trigger.InputMacro)?.steps
+            if (!existing.isNullOrEmpty()) addAll(existing) else addAll(DEFAULT_INPUT_STEPS)
         }
-    }
-    var sequenceMaxGapMs by remember(initialBinding.id) {
-        mutableLongStateOf((initialBinding.trigger as? Trigger.Sequence)?.maxGapMs ?: 1000L)
     }
 
     // Action state
@@ -207,9 +211,8 @@ fun BindingEditorScreen(
                 count = max(2, repeatCount),
                 maxGapMs = max(100L, repeatMaxGapMs),
             )
-            TriggerKind.SEQUENCE -> Trigger.Sequence(
-                gestures = if (sequenceGestures.size >= 2) sequenceGestures.toList() else listOf(GestureType.TURN_LEFT, GestureType.TURN_RIGHT),
-                maxGapMs = max(100L, sequenceMaxGapMs),
+            TriggerKind.INPUT_MACRO -> Trigger.InputMacro(
+                steps = if (inputSteps.size >= 2) inputSteps.toList() else DEFAULT_INPUT_STEPS,
             )
         }
 
@@ -249,7 +252,7 @@ fun BindingEditorScreen(
     val shadowWaitMs = AmbiguityResolver.maxShadowWaitMs(currentBinding, allBindings)
     val warnings = AmbiguityResolver.analyze(listOf(currentBinding) + otherBindings).filter {
         when (it) {
-            is com.heroesofthebrain.halo.rules.AmbiguityWarning.ShadowedBySequence -> it.singleBinding.id == currentBinding.id || it.sequenceBinding.id == currentBinding.id
+            is com.heroesofthebrain.halo.rules.AmbiguityWarning.ShadowedByInputMacro -> it.shadowedBinding.id == currentBinding.id || it.macroBinding.id == currentBinding.id
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.ShadowedByRepeat -> it.singleBinding.id == currentBinding.id || it.repeatBinding.id == currentBinding.id
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.OverlappingHoldRanges -> it.bindingA.id == currentBinding.id || it.bindingB.id == currentBinding.id
             is com.heroesofthebrain.halo.rules.AmbiguityWarning.DuplicateTrigger -> it.bindingA.id == currentBinding.id || it.bindingB.id == currentBinding.id
@@ -415,12 +418,8 @@ fun BindingEditorScreen(
                         onMaxGapChange = { repeatMaxGapMs = it },
                     )
                 }
-                TriggerKind.SEQUENCE -> {
-                    SequenceTriggerEditor(
-                        gestures = sequenceGestures,
-                        maxGapMs = sequenceMaxGapMs,
-                        onMaxGapChange = { sequenceMaxGapMs = it },
-                    )
+                TriggerKind.INPUT_MACRO -> {
+                    InputMacroEditor(steps = inputSteps)
                 }
             }
 
@@ -830,11 +829,7 @@ private fun RepeatTriggerEditor(
 }
 
 @Composable
-private fun SequenceTriggerEditor(
-    gestures: MutableList<GestureType>,
-    maxGapMs: Long,
-    onMaxGapChange: (Long) -> Unit,
-) {
+private fun InputMacroEditor(steps: MutableList<InputStep>) {
     var showAddMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -850,7 +845,7 @@ private fun SequenceTriggerEditor(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Gestures in Sequence (${gestures.size})",
+                    "Input Steps (${steps.size})",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f).padding(end = 12.dp),
@@ -863,62 +858,172 @@ private fun SequenceTriggerEditor(
                                 text = { Text(g.title()) },
                                 onClick = {
                                     showAddMenu = false
-                                    gestures.add(g)
+                                    steps.add(newInputStep(g))
                                 },
                             )
                         }
                     }
                 }
             }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Do the steps in order. Each step must start within its window after the previous one; " +
+                    "any other gesture in between starts the macro over. Gestures used by a step don't run their own bindings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Grey,
+            )
 
             Spacer(Modifier.height(10.dp))
 
-            gestures.forEachIndexed { index, gesture ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("${index + 1}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            Modifier
-                                .size(8.dp)
-                                .background(gesture.color(), CircleShape),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(gesture.title(), style = MaterialTheme.typography.bodyMedium)
-                    }
+            steps.forEachIndexed { index, step ->
+                InputStepRow(
+                    index = index,
+                    step = step,
+                    canRemove = steps.size > 2,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < steps.lastIndex,
+                    onChange = { steps[index] = it },
+                    onRemove = { steps.removeAt(index) },
+                    onMoveUp = { steps.add(index - 1, steps.removeAt(index)) },
+                    onMoveDown = { steps.add(index + 1, steps.removeAt(index)) },
+                )
+                if (index < steps.lastIndex) Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
 
-                    Row {
-                        if (gestures.size > 2) {
-                            TextButton(onClick = { gestures.removeAt(index) }) {
-                                Text("Remove", color = Red)
-                            }
+private fun newInputStep(gesture: GestureType): InputStep =
+    InputStep(gesture = gesture, minHoldMs = if (gesture.held) 500L else 0L)
+
+private fun roundTo100(value: Float): Long = (value / 100f).roundToLong() * 100L
+
+@Composable
+private fun InputStepRow(
+    index: Int,
+    step: InputStep,
+    canRemove: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onChange: (InputStep) -> Unit,
+    onRemove: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    var showGestureMenu by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = FreehandColors.Ink850,
+        border = androidx.compose.foundation.BorderStroke(1.dp, FreehandColors.Ink700),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("${index + 1}", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.weight(1f)) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = step.gesture.color().copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, step.gesture.color()),
+                        modifier = Modifier.clickable { showGestureMenu = true },
+                    ) {
+                        Text(
+                            text = "${step.gesture.title()} ▾",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = step.gesture.color(),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
+                    DropdownMenu(expanded = showGestureMenu, onDismissRequest = { showGestureMenu = false }) {
+                        GestureType.values().forEach { g ->
+                            DropdownMenuItem(
+                                text = { Text(g.title()) },
+                                onClick = {
+                                    showGestureMenu = false
+                                    onChange(
+                                        step.copy(
+                                            gesture = g,
+                                            minHoldMs = if (g.held) step.minHoldMs.takeIf { it > 0 } ?: 500L else 0L,
+                                            maxHoldMs = if (g.held) step.maxHoldMs else null,
+                                        ),
+                                    )
+                                },
+                            )
                         }
                     }
                 }
+                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
+                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
+                if (canRemove) {
+                    TextButton(onClick = onRemove) { Text("Remove", color = Red) }
+                }
             }
 
-            Spacer(Modifier.height(10.dp))
-            Text("Max Gap Between Steps: ${maxGapMs} ms", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            Slider(
-                value = maxGapMs.toFloat(),
-                onValueChange = { onMaxGapChange(it.roundToLong()) },
-                valueRange = 400f..2500f,
-                steps = 20,
-            )
+            if (index > 0) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Start within ${formatWindow(step.withinMs)} after step $index",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Slider(
+                    value = step.withinMs.toFloat(),
+                    onValueChange = { onChange(step.copy(withinMs = roundTo100(it).coerceAtLeast(300L))) },
+                    valueRange = 300f..10_000f,
+                )
+            }
+
+            if (step.gesture.held) {
+                Text(
+                    "Hold at least ${step.minHoldMs} ms",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Slider(
+                    value = step.minHoldMs.toFloat(),
+                    onValueChange = {
+                        val minMs = roundTo100(it)
+                        onChange(step.copy(minHoldMs = minMs, maxHoldMs = step.maxHoldMs?.let { maxMs -> max(maxMs, minMs) }))
+                    },
+                    valueRange = 200f..3000f,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = step.maxHoldMs != null,
+                        onCheckedChange = { limit ->
+                            onChange(step.copy(maxHoldMs = if (limit) max(step.minHoldMs, 1500L) else null))
+                        },
+                    )
+                    Text("Limit hold length", style = MaterialTheme.typography.bodySmall)
+                }
+                val maxHoldMs = step.maxHoldMs
+                if (maxHoldMs != null) {
+                    Text(
+                        "Hold at most $maxHoldMs ms",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Slider(
+                        value = max(step.minHoldMs, maxHoldMs).toFloat(),
+                        onValueChange = { onChange(step.copy(maxHoldMs = max(step.minHoldMs, roundTo100(it)))) },
+                        valueRange = step.minHoldMs.toFloat()..max(5000L, step.minHoldMs + 100L).toFloat(),
+                    )
+                }
+            }
         }
     }
 }
@@ -1293,7 +1398,7 @@ private fun ConflictAnalysisCard(
             } else {
                 if (shadowWaitMs > 0) {
                     Text(
-                        text = "• Shadow delay: This binding will wait an extra ${shadowWaitMs} ms before firing because a sequence or repeat shares this initial gesture.",
+                        text = "• Shadow delay: This binding will wait an extra ${shadowWaitMs} ms before firing because an input macro or repeat starts with the same input.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

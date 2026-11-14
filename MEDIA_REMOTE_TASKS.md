@@ -65,7 +65,7 @@ Done when: a new user can calibrate, sees their hit rates, and the detector runs
   - single gesture
   - hold with minimum and maximum duration
   - repeat count with a maximum gap between repeats
-  - sequence: gesture A, then gesture B within a time window
+  - input macro: gestures in order (a clench step with its own hold range), each step within its own window after the previous one. It replaced the older sequence trigger; saved sequences are converted on load.
 - [x] Action types:
   - one media command
   - repeat a command at an interval while the gesture is held
@@ -74,7 +74,7 @@ Done when: a new user can calibrate, sees their hit rates, and the detector runs
 - [x] Conditions per binding: only when armed; only when media is playing or paused; only when the channels the gesture needs have good contact.
 - [x] Global settings: arm/disarm gesture, auto-disarm after inactivity, a global cooldown, a minimum confidence.
 - [x] Engine: a state machine that turns the gesture stream plus a clock into actions. Write it in plain Kotlin with no Android dependencies, so it can be unit-tested.
-- [x] Ambiguity: when the start of a gesture matches several bindings (short clench vs. long clench, single gesture vs. sequence), the engine waits until only one can match. Report the extra wait to the editor.
+- [x] Ambiguity: when the start of a gesture matches several bindings (short clench vs. long clench, single gesture vs. input macro, a short macro vs. a longer one that starts the same way), the engine waits until only one can match. Report the extra wait to the editor.
 - [x] Persistence: store profiles as JSON (kotlinx.serialization or DataStore). Add profile import and export.
 - [x] Tests: the engine on synthetic gesture streams, and end to end from replay CSVs to actions.
 

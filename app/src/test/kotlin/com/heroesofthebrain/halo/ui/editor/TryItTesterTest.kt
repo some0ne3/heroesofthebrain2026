@@ -9,6 +9,7 @@ import com.heroesofthebrain.halo.detect.GestureType
 import com.heroesofthebrain.halo.media.MediaCommand
 import com.heroesofthebrain.halo.rules.Binding
 import com.heroesofthebrain.halo.rules.BindingTiming
+import com.heroesofthebrain.halo.rules.InputStep
 import com.heroesofthebrain.halo.rules.RuleAction
 import com.heroesofthebrain.halo.rules.Trigger
 import org.junit.Assert.assertEquals
@@ -136,10 +137,10 @@ class TryItTesterTest {
     }
 
     @Test
-    fun `sequence gesture matches step by step`() {
+    fun `input macro matches step by step`() {
         val binding = Binding(
             id = "test-seq",
-            trigger = Trigger.Sequence(listOf(GestureType.TURN_LEFT, GestureType.TURN_RIGHT), maxGapMs = 1000L),
+            trigger = Trigger.InputMacro(GestureType.TURN_LEFT, GestureType.TURN_RIGHT, withinMs = 1000L),
             action = RuleAction.SingleCommand(MediaCommand.Previous),
         )
 
@@ -147,11 +148,84 @@ class TryItTesterTest {
 
         // Step 1: Turn Left at t=1000
         tester.processEvent(GestureInstant(GestureType.TURN_LEFT, timestampMs = 1000L, confidence = 0.9f))
-        assertEquals(1, tester.session.sequenceStepIndex)
+        assertEquals(1, tester.session.macroStepIndex)
         assertEquals(TryItStatus.LISTENING, tester.session.status)
 
         // Step 2: Turn Right at t=1600 (gap 600ms <= 1000ms) -> Match!
         val session = tester.processEvent(GestureInstant(GestureType.TURN_RIGHT, timestampMs = 1600L, confidence = 0.9f))
+        assertEquals(TryItStatus.MATCHED, session.status)
+    }
+
+    private val blinkThenClench = Binding(
+        id = "test-macro",
+        trigger = Trigger.InputMacro(
+            listOf(
+                InputStep(GestureType.DOUBLE_BLINK),
+                InputStep(GestureType.CLENCH, withinMs = 2000L, minHoldMs = 500L, maxHoldMs = 1500L),
+            ),
+        ),
+        action = RuleAction.SingleCommand(MediaCommand.Mute),
+    )
+
+    @Test
+    fun `input macro clench step matches when held within its range`() {
+        val tester = TryItTester(blinkThenClench)
+
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1000L, confidence = 0.9f), timestampMs = 1000L)
+        tester.processEvent(GestureStart(GestureType.CLENCH, timestampMs = 1500L, confidence = 0.9f, onsetMs = 1300L), timestampMs = 1500L)
+        assertEquals(TryItStatus.HOLDING, tester.session.status)
+
+        val session = tester.processEvent(GestureEnd(GestureType.CLENCH, timestampMs = 2400L, confidence = 0.9f, durationMs = 1100L), timestampMs = 2400L)
+        assertEquals(TryItStatus.MATCHED, session.status)
+        assertEquals(1400L, session.activeBreakdown!!.triggerDurationMs)
+    }
+
+    @Test
+    fun `input macro clench step held too briefly starts over`() {
+        val tester = TryItTester(blinkThenClench)
+
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1000L, confidence = 0.9f), timestampMs = 1000L)
+        tester.processEvent(GestureStart(GestureType.CLENCH, timestampMs = 1500L, confidence = 0.9f, onsetMs = 1300L), timestampMs = 1500L)
+        val session = tester.processEvent(GestureEnd(GestureType.CLENCH, timestampMs = 1700L, confidence = 0.9f, durationMs = 400L), timestampMs = 1700L)
+
+        assertEquals(TryItStatus.TOO_SHORT, session.status)
+        assertEquals(0, session.macroStepIndex)
+    }
+
+    @Test
+    fun `input macro step window runs out on the tick`() {
+        val tester = TryItTester(blinkThenClench)
+
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1000L, confidence = 0.9f), timestampMs = 1000L)
+        tester.tick(2500L)
+        assertEquals(500L, tester.session.macroRemainingMs)
+
+        tester.tick(3001L)
+        assertEquals(TryItStatus.TIMED_OUT, tester.session.status)
+        assertEquals(0, tester.session.macroStepIndex)
+    }
+
+    @Test
+    fun `input macro wrong gesture starts over and can open a new attempt`() {
+        val binding = Binding(
+            id = "blink-right",
+            trigger = Trigger.InputMacro(GestureType.DOUBLE_BLINK, GestureType.TURN_RIGHT, withinMs = 2000L),
+            action = RuleAction.SingleCommand(MediaCommand.Next),
+        )
+        val tester = TryItTester(binding)
+
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1000L, confidence = 0.9f), timestampMs = 1000L)
+        tester.processEvent(GestureInstant(GestureType.TURN_LEFT, timestampMs = 1200L, confidence = 0.9f), timestampMs = 1200L)
+        assertEquals(TryItStatus.WRONG_STEP, tester.session.status)
+        assertEquals(0, tester.session.macroStepIndex)
+
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1400L, confidence = 0.9f), timestampMs = 1400L)
+        tester.processEvent(GestureInstant(GestureType.DOUBLE_BLINK, timestampMs = 1600L, confidence = 0.9f), timestampMs = 1600L)
+        assertEquals(TryItStatus.WRONG_STEP, tester.session.history.first().status)
+        assertEquals(TryItStatus.LISTENING, tester.session.status)
+        assertEquals(1, tester.session.macroStepIndex)
+
+        val session = tester.processEvent(GestureInstant(GestureType.TURN_RIGHT, timestampMs = 2000L, confidence = 0.9f), timestampMs = 2000L)
         assertEquals(TryItStatus.MATCHED, session.status)
     }
 }
